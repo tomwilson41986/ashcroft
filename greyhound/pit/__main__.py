@@ -29,7 +29,8 @@ def main(argv=None) -> int:
     from greyhound.track import runs_through
     from sources.common import Store
     store = Store(root=a.root)
-    names = list(pit.TABLES) if a.build == "all" else [n.strip() for n in a.build.split(",")]
+    names = ([t for t in pit.TABLES if t not in pit.ON_DEMAND] if a.build == "all"
+             else [n.strip() for n in a.build.split(",")])
     last = date.fromisoformat(a.last) if a.last else date.today() - timedelta(days=1)
     trial_rows: list = []
     runs = runs_through(store, last, first_year=a.first_year, trials_out=trial_rows)
@@ -38,9 +39,26 @@ def main(argv=None) -> int:
     if "ids" in names:
         from greyhound.pit.ids import load_runners
         ctx["runners"] = load_runners(store, f"{a.first_year}-{last.year}")
-    if {"market", "figs", "form"} & set(names):              # figs, form: the market rating on the Betfair SP too
+    if {"market", "figs", "form", "pricepath", "market2", "mrate"} & set(names):              # figs, form: the market rating on the Betfair SP too
         from greyhound.model import load_prices
         ctx["prices"] = load_prices(store, f"{a.first_year}-{last.year}")
+    if "seq" in names:                                       # the sequence table's monthly networks, cached
+        ctx["model_store"] = store
+    if "irish_style" in names:                               # the Irish in-running comments, and the Irish/GB results
+        from greyhound.pit.irish_style import load_context as style_context
+        ctx.update(style_context(store))
+    elif {"irish", "irish_market", "irish2"} & set(names):                                     # GreyhoundAPI's Irish and GB results (sources/greyhoundapi.py)
+        from greyhound.pit.irish import load_context as irish_context
+        ctx.update(irish_context(store))
+    if "pricepath" in names:                                 # the GB place markets' BSP (ctx["place_prices"])
+        from greyhound.pit.pricepath import load_context as price_context
+        ctx.update(price_context(store, f"{a.first_year}-{last.year}"))
+    if "trainer2" in names:                                  # GreyhoundAPI's GB runs: the trainer on each run
+        from greyhound.pit.trainers import load_context as trainer_context
+        ctx.update(trainer_context(store))
+    if "world" in names:                                     # GreyhoundAPI's pedigree and Irish/Australian results
+        from greyhound.pit.world import load_context as world_context
+        ctx.update(world_context(store))
     if "weather" in names:
         from greyhound.pit.weather import load_context
         ctx.update(load_context(store))

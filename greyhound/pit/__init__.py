@@ -29,6 +29,45 @@ earlier one):
 | clock | ck_ | the wait in the racing kennels, the dog's habitual hour, the session, daylight, the fireworks calendar |
 | optics | op_ | how much better the printed card looks than the dog ran: the look, the substance, the surplus |
 | litter | lt_ | the litter as a live sensor: the littermates' current form, their level, the runt |
+| readers | rd_ | the price as a pool of card readers: six rules a punter applies to the card, each ranking the field |
+| followed | fo_ | the followed dog: its favourite history and how the market has bet it against how it ran |
+| salience | sl_ | each printed attribute against today's field: the gaps, the largest standout for and against |
+| line | ln_ | running-line and role change; whether the trap suits the line; the neighbours' squeeze and conflict |
+| cells | ch_ | the price's past record in each card-visible cell (trap at the track and trip, sire, grade move, age by sex) |
+| improve | im_ | improvement: the dog's own trend, exposure of the condition space, nth-time curves, hidden form |
+| debut | db_ | debutants and first-time conditions: a prior for a dog with little race form, giving way as it runs |
+| lastrace | lr_ | the last race: how fancied the opposition was, the market against the result, what changes today |
+| pedigree | pg_ | pedigree posteriors: sire, dam, litter and dog in one hierarchy, each with its mean and its uncertainty |
+| league | lg_ | Hunter's MM: track-and-grade strengths on one scale, the class move in those units, strength of schedule, market strength faced |
+| origin | og_ | where the dog was bred (Ireland or Britain), an Irish import with little British form (research: built on demand) |
+| going | gw_ | speed figures with a Timeform-style going: the clean field against expectation, the trap third and meeting half corrected (research: built on demand) |
+| bends | bn_ | the bends feed: each run's race bend by bend from the comment, the sectional rank and the finish (estimated positions at the first and last bend, leads, challenges, trouble early/mid/late) (research: built on demand) |
+| irish | ie_ | the dog's Irish form from GreyhoundAPI's Irish results, linked by its GB results: runs, wins, time and sectional figures, class, an Irish import (research: built on demand) |
+| sectx | sc_ | sectionals and times taken apart: the second sectional (the run home), Finishing and Early Speed %, track and race (grade) pars for each, each section's own going, linked across tracks, against the race par and the field, ranks and places gained; the dog's last, mean, recency-weighted, best, spread and trend, and today's race's projected early pace (research: built on demand) |
+| irish_style | irs_ | the dog's run style in Ireland from GreyhoundAPI's in-running comments: quick or slow away, led, led early, rails, wide, trouble, ran on, faded (research: built on demand) |
+| secfig | sx_ | the first sectional on one scale across tracks: against the track, trip and trap par, less the night's grade-aware sectional going, linked across tracks by the dogs that move, and against the field it met (research: built on demand) |
+| irish_market | im_ | the Irish market's view of the dog (GreyhoundAPI Irish SPs: actual over expected, log SP, SP rank against the finish, favourite share) and its Irish weights (research: built on demand) |
+| world | wd_ | the sire's and dam's progeny abroad (GreyhoundAPI Ireland and Australia): runs, win rates, time and sectional figures (research: built on demand) |
+| trainer2 | ta_ | the trainer at the time (GreyhoundAPI per-run, GBGB read fresh, the card): decayed gamma-posterior A/E against the Shin SP with sd, 30-day form, win/place rates, at the track, the move, situations shrunk to the trainer (research: built on demand) |
+| draw2 | dr2_ | each trap's bias with the track's other trips as the prior: winners against the de-biased SP, leads less the dogs' own lead chance (research: built on demand) |
+| bend2 | bd2_ | the first bend with track-specific trap terms and shrunk inputs: exact expected position, crowding chance (research: built on demand) |
+| line2 | ln2_ | the neighbours' squeeze weighted by arrival, traps 1 and 2 away; the pace collision (research: built on demand) |
+| trials2 | tq_ | trials on the race scale: a walk-forward trial-to-race offset (track, trip, solo/company), the session's going, the trial in company (position, margin, a rival-implied figure), trial level against race level (research: built on demand) |
+| ability2 | ka_ | the Kalman levels fed the trials on the race scale, noise per trip band, the level damped to the grade par over layoffs (research: built on demand) |
+| market2 | mq_ | the dog's and the yard's record against the de-biased SP and the Betfair SP: gamma-posterior log A/E with sd and z, decayed by days; drift on race-normalised shares (research: built on demand) |
+| mrate | mv_ | the market-implied rating rebuilt: trap mean out of the observation, share-dependent noise, the market's error memory, reversion after layoffs (research: built on demand) |
+| breeding2 | bq_ | the sire's and dam's progeny rebuilt: leave-one-dog-out (and littermates for the dam), dog-first, empirical-Bayes shrinkage, A/E on the de-biased SP, trials in the fig measure (research: built on demand) |
+| form2 | fq_ | the form table's trend damped over days off, and an age curve with dog fixed effects (research: built on demand) |
+| pricepath | px_ | the market's past readings of the dog: steaming or drifting from the morning and pre-play WAP to the BSP, matched-volume attention, the place/win BSP ratio against its field size and price band (research: built on demand) |
+| racectx | rx_ | today's field: spread of prior ratings, top-two gap, debutants and lightly raced dogs, early-pace pressure, the dog's rank (research: built on demand) |
+| xtime2 | xu_ | the expected-time table with forgetting trap and grade effects (fitted half-lives), constants fitted on the early slice, the preference updated on the post-level residual, P(fastest) from the sd, a vacant box as room (research: built on demand) |
+| sim2 | sm2_ | the race simulator refitted: constants fitted on an early window by the bend-leader and winner likelihood, inputs shrunk to the track-and-grade par, a lane from the running line, trial and debut priors; P(lead), P(win), expected bend position, crowding (research: built on demand) |
+| irish2 | iq_ | the Irish figures on the GB scale: link offsets per Irish track and trip from the dogs that move (shrunk, refitted each 1 Jan), the uncertainty, a walk-forward ridge transfer to the first GB figure, the gaps to today's field (research: built on demand) |
+| league2 | lgd_ | the league table with its half-life and pseudo-runs fitted on the early slice and every fit refitted daily from the days before (the within-week update) (research: built on demand) |
+| cardread | cr_ | the card-reader: a walk-forward conditional logit of the de-biased SP chance on the printed card (form, wins, times, sectionals, grade, trap, days off); the card's implied chance, the ability's (xt_tot) against it, the largest standouts for and against (research: built on demand) |
+| lastrace2 | lr2_ | the last race's meeting variant and its race speed less it (research: built on demand) |
+| speed2 | sv_ | speed figures on the review's lines: clean-runner going by side and half, relinked, a fitted field blend, decay by days (half-life fitted), and linked percent stand-ins for the engine's gsr/esr/fsr (last, mean of 3, max of 6, decayed) (research: built on demand) |
+| seq | se_ | a GRU over the dog's last 8 runs, refitted each month: its forecasts of the run's SP share, win against SP, time, finish, sectional (research: built on demand, not in ``all``) |
 
 Each table is written to the sources store as ``<STORE_PREFIX>/<table>.parquet`` with ``<table>.meta.json``: the code
 hash, the engine's code hash, when built, the rows, the date range, each column's coverage, and the table's own fit notes. The registry
@@ -43,6 +82,7 @@ race and dog, so each family is scored like any other block, on both targets.
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import importlib
 import io
@@ -55,7 +95,22 @@ import pandas as pd
 TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs", "form", "draw",
           "bend", "xtime", "dyad", "cycle", "trials",
           # the discovery tables of 11 Nov 2026 (each reads the expected-time table)
-          "ext", "fitness", "fear", "clock", "optics", "litter")
+          "ext", "fitness", "fear", "clock", "optics", "litter",
+          "readers", "followed", "salience", "line", "cells",
+          "improve", "debut", "lastrace", "pedigree", "league",
+          # the speed figures of 14 Nov 2026 (reports/greyhound_model.md section 60)
+          "speed",
+          # the 16 Nov 2026 tests (ledger greyhound-origin-batch43-1116, greyhound-going-batch43-1116)
+          "origin", "going", "bends", "irish", "world", "irish_market", "secfig", "sectx", "irish_style",
+          # the feature review of 17 Nov 2026 (reports/greyhound_feature_review.md)
+          "trainer2", "draw2", "bend2", "line2", "trials2", "ability2", "market2", "mrate", "breeding2", "form2", "pricepath", "racectx", "xtime2", "sim2", "irish2", "league2", "cardread", "lastrace2", "speed2",
+          # research tables, built on demand (``ON_DEMAND``: never in --build all; torch is installed for them)
+          "seq")
+#: tables ``--build all`` leaves out: the seq table refits a network monthly from 2024 (one to two hours on a runner,
+#: and torch); it is built by name (greyhound-pit.yml, tables=seq)
+ON_DEMAND: tuple = ("origin", "going", "bends", "world", "irish_market", "secfig", "sectx", "irish_style",
+                    "trainer2", "line2", "market2", "mrate", "breeding2", "form2", "pricepath", "racectx", "xtime2", "sim2", "irish2", "league2", "cardread", "lastrace2", "speed2")   # 15 Nov 2026: the seq table is served (its monthly networks cached, seq.py);
+                                          # 16 Nov 2026: the origin and going tables are tested before --build all builds them
 KEY = ["race_id", "dog_id"]
 #: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation
 #: faults: greyhound/data.py, greyhound/metrics.py). The tables built from the engine before it stay at
@@ -75,7 +130,13 @@ def module(name: str):
 def code_hash(name: str) -> str:
     root = Path(__file__).resolve().parent
     h = hashlib.sha256()
-    for f in ("core.py", f"{name}.py"):
+    # a variant table (``DEPENDS``: the tables whose code it reuses) changes when the code it reuses does
+    src = (root / f"{name}.py").read_text() if (root / f"{name}.py").exists() else ""
+    deps = []
+    for line in src.splitlines():
+        if line.startswith("DEPENDS"):
+            deps = [d.strip(" '\"") for d in line.split("=", 1)[1].strip(" ()[]").split(",") if d.strip(" '\"")]
+    for f in ("core.py", f"{name}.py", *(f"{d}.py" for d in deps)):
         p = root / f
         h.update(p.read_bytes() if p.exists() else b"")
     return h.hexdigest()[:12]
@@ -109,14 +170,40 @@ def coverage(tab: pd.DataFrame, runs: pd.DataFrame) -> dict:
                                  for c in cols[:3]}}
 
 
-def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None, keep: bool = False) -> dict:
+#: the tables a table's build reads from ``ctx`` (tests/test_greyhound_pit.py holds the list to the code)
+DEPENDS = {"trouble": ("ability",), "dyad": ("xtime",), "ext": ("xtime",), "fitness": ("xtime",), "fear": ("xtime",),
+           "clock": ("xtime",), "optics": ("xtime",), "litter": ("xtime",),
+           "line2": ("line", "xtime", "ext"), "sim2": ("trials",), "cardread": ("xtime",)}
+
+
+def stored_fits(store, names) -> dict:
+    """Each named table's stored notes (its fitted constants), where the stored table was built by this code (its
+    meta's ``hash`` equals ``code_hash``): what a card build reads instead of fitting again (``ctx["fitted"]``)."""
+    out = {}
+    for name in names:
+        try:
+            meta = json.loads(store.get(f"{STORE_PREFIX}/{name}.meta.json"))
+        except Exception:
+            continue
+        if meta.get("hash") == code_hash(name) and isinstance(meta.get("notes"), dict):
+            out[name] = meta["notes"]
+    return out
+
+
+def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None, keep: bool = False,
+                 cut: pd.DataFrame | None = None) -> dict:
     """Build ``names`` in ``TABLES`` order; write each to ``store`` (when given); return each table's meta, or with
-    ``keep`` the tables themselves (the live model's card build: greyhound/live.py)."""
+    ``keep`` the tables themselves (the live model's card build: greyhound/live.py). With ``cut`` (the keys of the
+    rows wanted) each kept table is cut to those rows as soon as no later table reads it (``DEPENDS``), so the
+    build holds one whole table at a time and not all of them (13 Nov 2026: sixteen whole tables from 2014 ran the
+    price run's 16 GB runner out of memory, greyhound-live.yml run 43427444021)."""
     from greyhound.pit import core
     ctx = dict(ctx or {})
     figs = core.per_run_figures(runs)
     metas = {}
-    for name in [t for t in TABLES if t in names]:
+    order = [t for t in TABLES if t in names]
+    kept: dict = {}
+    for name in order:
         mod = module(name)
         t0 = datetime.now(timezone.utc)
         tab, notes = mod.build(runs, figs, ctx)
@@ -130,6 +217,14 @@ def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None,
             store.put_parquet(f"{STORE_PREFIX}/{name}.parquet", tab)
             store.put(f"{STORE_PREFIX}/{name}.meta.json", json.dumps(meta, indent=1, default=str).encode())
         metas[name] = meta
+        if keep and cut is not None:
+            later = order[order.index(name) + 1:]
+            for done in [t for t in metas if t not in kept]:
+                if not any(done in DEPENDS.get(t, ()) for t in later):
+                    kept[done] = ctx.pop(done).merge(cut, on=KEY)
+            gc.collect()
+    if keep and cut is not None:
+        return kept
     return {n: ctx[n] for n in metas} if keep else metas
 
 

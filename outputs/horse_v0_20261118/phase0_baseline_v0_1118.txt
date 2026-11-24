@@ -1,0 +1,60 @@
+== run 43895762307 artifact research-iter126-stack-collateral-164 oos_st.csv: 143,075 rows, folds [np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4), np.int64(5)], 2024-12-28 to 2026-03-31
+/home/runner/work/ashcroft/ashcroft/model/form_windows.py:140: RuntimeWarning: divide by zero encountered in divide
+  p = pd.Series(np.where(bsp > 1, 1.0 / bsp, np.nan))
+join {'oos_rows': 143075, 'joined_rows': 143075, 'lbsc_found': 134150}
+
+== 1. BFSP target: mean absolute log error (95% CI by race day)
+  overall              (0.37465, 0.37168, 0.37761)
+  code=aw              (0.36667, 0.36198, 0.37161, 38272)
+  code=flat turf       (0.36159, 0.35667, 0.36654, 45750)
+  code=jumps           (0.38993, 0.38559, 0.39416, 59053)
+  band=<3              (0.271, 0.26496, 0.27756, 8089)
+  band=3-6             (0.26812, 0.26457, 0.27156, 23430)
+  band=6-12            (0.29466, 0.29146, 0.29793, 33223)
+  band=12-25           (0.36168, 0.35746, 0.36574, 30773)
+  band=25-50           (0.43545, 0.43009, 0.44042, 19770)
+  band=50+             (0.56136, 0.55394, 0.56863, 27790)
+  fs=2-7               (0.33586, 0.3319, 0.34017, 32168)
+  fs=8-11              (0.36996, 0.36627, 0.37381, 61588)
+  fs=12-15             (0.39668, 0.391, 0.40247, 34822)
+  fs=16+               (0.42769, 0.41818, 0.43752, 14497)
+  qtr=2024Q4           (0.40047, 0.35581, 0.42984, 1360)
+  qtr=2025Q1           (0.3869, 0.3805, 0.39362, 22879)
+  qtr=2025Q2           (0.37374, 0.36837, 0.37938, 33471)
+  qtr=2025Q3           (0.35386, 0.34854, 0.35951, 33050)
+  qtr=2025Q4           (0.38724, 0.37975, 0.39433, 30130)
+  qtr=2026Q1           (0.37566, 0.36853, 0.38223, 22185)
+
+== 2. win probability: 15,647 races, 133,936 runners with one winner held
+  p_mod: log loss (0.30591, 0.30342, 0.30865), Brier (0.09047, 0.08954, 0.09141)
+  p_mkt: log loss (0.29583, 0.29331, 0.29835), Brier (0.0878, 0.08699, 0.08865)
+  log loss, model minus market: (0.01008, 0.00917, 0.01098) (positive: the market is better)
+  calibration by decile of p_model
+         n       p     obs     mkt
+dec                               
+0    13394  0.0050  0.0055  0.0059
+1    13394  0.0186  0.0207  0.0208
+2    13393  0.0343  0.0396  0.0364
+3    13394  0.0520  0.0518  0.0538
+4    13393  0.0723  0.0739  0.0736
+5    13394  0.0958  0.0956  0.0957
+6    13393  0.1244  0.1287  0.1234
+7    13394  0.1624  0.1578  0.1618
+8    13393  0.2211  0.2221  0.2179
+9    13394  0.3823  0.3726  0.3790
+  ECE 0.00293
+
+  Benter (walk-forward by fold):
+    {'fold': 1, 'beta_model': -0.0755, 'beta_market': 1.0439, 'beta_market_alone': 0.984}
+    {'fold': 2, 'beta_model': 0.0083, 'beta_market': 0.985, 'beta_market_alone': 0.9916}
+    {'fold': 3, 'beta_model': 0.0057, 'beta_market': 0.9773, 'beta_market_alone': 0.9819}
+    {'fold': 4, 'beta_model': 0.0019, 'beta_market': 0.9833, 'beta_market_alone': 0.9848}
+    {'fold': 5, 'beta_model': 0.0109, 'beta_market': 0.9773, 'beta_market_alone': 0.986}
+  log-likelihood gain over the market alone, per race x1000: (-0.29, -0.58, -0.01) (13,023 races)
+
+== 3. normalised beaten lengths: Spearman within race, race mean (95% CI by race day)
+  lbsc     races 15,168: model (0.42388, 0.41826, 0.42949), BSP (0.4627, 0.45689, 0.46836), model - BSP (-0.03882, -0.04234, -0.03563)
+  rel_s    races 15,168: model (0.42831, 0.42229, 0.43419), BSP (0.46769, 0.46193, 0.47354), model - BSP (-0.03938, -0.04272, -0.03608)
+  nfp_out  races 15,169: model (0.42944, 0.42375, 0.43542), BSP (0.46871, 0.46282, 0.47443), model - BSP (-0.03927, -0.04267, -0.03594)
+
+written out/phase0_baseline_v0.json

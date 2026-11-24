@@ -1,0 +1,31 @@
+# racing² horse racing - the race selection policy (Phase 4 of the owner's model brief, 19 Nov 2026)
+# Every threshold names its source and its evidence. Nothing here changes the live rule: trading/config_live.json is
+# the owner's, and a change to it is the owner's decision.
+
+policy: keep the live rule (no change proposed)
+live_rule:                                   # trading/config_live.json, as served on 19 Nov 2026
+  clv_bar: 0.03                              # expected CLV under the closing model at least 3%
+  max_price: 200.0                           # limits.max_price
+  min_price: none
+  min_field: none
+  max_daily_turnover: 4000.0                 # limits.max_daily_turnover (GBP)
+evidence:
+  step_1_segments:                           # ledger phase4-segments-1119; outputs/horse_v0_20261118/phase4_segments_1119.txt
+    research_clv_0pct_bar: "+6.83% (90% +6.59 to +7.06), 37,994 bets, 2025-02-01 to 2026-03-31, before commission"
+    every_segment_positive: "code, class, distance, field size, off hour, month, the 40 largest courses: all intervals above zero; shrinkage flattens course and class"
+    expected_clv_calibrated: "0-3% -> +2.03%, 3-5% -> +4.20%, 5-10% -> +6.95%, 10-20% -> +11.89%, 20%+ -> +24.23%"
+    live_clv: "+3.55% (90% +2.22 to +4.88), 5,757 horses, 30 Sep - 18 Nov 2026: about half the research figure"
+  step_2_rules:                              # ledger phase4-rules-1119; outputs/horse_v0_20261118/phase4_rules_1119.txt
+    trials: 40                               # bar 0/2/3/5/8% x min price 1/3 x max 50/200 x min field 2/6
+    walk_forward_choice: "bar 0%, prices 1-200, any field (10 of 11 months)"
+    vs_live_settings_per_day: "+GBP29.31 (90% +22.68 to +35.78), net of 2% commission, GBP250-to-win research stakes"
+    deflated_sharpe: 1.0
+    pbo: 0.33
+    why_not_adopted: >-
+      The gain is turnover: the 0% bar adds GBP512,307 of turnover (+48%) for GBP10,911 of net CLV, 2.1% at the
+      margin in research. Live has realised about half the research CLV, so the marginal bets would earn about 1%,
+      and the extra volume would run into the GBP4,000 day limit. Revisit after Phase 5 (execution) closes the gap.
+  not_helpful:
+    min_price_3: "lower net CLV at every bar (e.g. bar 3%: GBP45,480 against GBP91,876)"
+    min_field_6: "lower net CLV at every bar"
+    max_price_50: "the same as 200 within GBP1,100"

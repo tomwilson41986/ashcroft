@@ -97,6 +97,13 @@ PAPER_VARIANTS = {
     "m10": {"margin": 0.10},
     "short20": {"gate": "short", "margin": 0.20},
     "short10": {"gate": "short", "margin": 0.10},
+    # the close at the SP (the owner, 14 Nov 2026: "Can we trade at sp", then "Put this to paper"; ledger
+    # greyhound-early-lay-sp-close-1114): the live rule's lays, each closed by a back at the SP for the lay's stake
+    # instead of the green-up (a dog that wins pays stake x (SP - lay price), one that loses nothing), and the same
+    # with no lay under 3. Scored on the live-key books with the fill the reconciliation trusts (matched once a later
+    # book's best lay price is at or under ours: 'through'), settled by the SP and the result.
+    "spclose": {"close": "sp", "fill": "through"},
+    "spclose3": {"close": "sp", "fill": "through", "min_price": 3.0},
 }
 LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "track", "race_time", "trap", "dog", "action",
                  "price", "size", "matched", "avg_price", "f_bsp", "mid", "p_model", "bet_id", "status", "error",
@@ -186,6 +193,7 @@ def decide(d: pd.DataFrame, fit: dict, cfg: dict) -> pd.DataFrame:
     x["short"] = x["mid"].to_numpy(float) < SHORT_PRICE                       # limit_study.gate_flags' 'short'
     x["lay_price"] = ls.ladder(x.f_bsp.to_numpy(float) * (1 - cfg["margin"]), up=False)
     ok = np.isfinite(x.lay_price) & (x.lay_price > 1.0) & (x.lay_price <= cfg["max_price"])
+    ok &= x.lay_price.to_numpy(float) >= float(cfg.get("min_price") or 1.0) - 1e-9
     # the owner, 3 Nov 2026: never at or above the market's mid, so a lay only ever rests in the queue and never takes
     # the price on a forecast that overstates the drift (the first live lays: those above the mid lost GBP17.85 of 20.39)
     x["below_mid"] = x.lay_price.to_numpy(float) < x["mid"].to_numpy(float) - 1e-9
@@ -309,6 +317,26 @@ def ladder_limit(levels: list, value: float, depth: int = 3) -> float | None:
     return limit
 
 
+def ladder_stake(levels: list, value: float, depth: int = 3) -> tuple[float | None, float]:
+    """The green-up back for ``value`` (stake x price) down the best ``depth`` back prices: the lowest price to take and
+    the stake that, filled best price first as Betfair fills a limit back, is worth ``value``. A stake sized at the
+    lowest price alone (value / limit) is filled partly at the better prices above it and backs more than the lay's
+    value: the over-cover inferred on 296 of 479 live green-ups, 1.4% over on their median, about 18% at the worst
+    1% (the fill reconciliation's ledger, 3-13 Nov 2026; the owner, 14 Nov: "fix the closing order"). Where the levels hold less than the
+    value, the rest is sized at the lowest price (a fill or kill takes what is there; the rest is tried next second)."""
+    left, stake, limit = float(value), 0.0, None
+    for price, size in levels[:depth]:
+        if left <= 1e-9:
+            break
+        limit = price
+        take = min(float(size), left / price)
+        stake += take
+        left -= take * price
+    if left > 1e-9 and limit:
+        stake += left / limit
+    return limit, stake
+
+
 # --------------------------------------------------------------------------------------------------------------------
 # The trader
 # --------------------------------------------------------------------------------------------------------------------
@@ -329,6 +357,7 @@ class EarlyLay:
         self.locked = 0.0              # the day's P&L locked by green-ups
         self.open_liability: dict = {}  # market -> liability not yet closed at a known P&L
         self.laid: dict = {}           # market -> liability of the lays placed and not yet closed
+        self._backs: dict = {}         # market -> bet id -> (selection, ref, matched, price): green-up backs seen
         self.preds: pd.DataFrame | None = None
         self.until: datetime | None = None            # set by run(): the time the trader stops laying
         self._sent: list = []                          # the times of the lays sent (the gate's order rate)
@@ -542,7 +571,7 @@ class EarlyLay:
                           "market_id": mid, "action": "flat", "error": "paper: no orders to close",
                           "seconds_to_off": round(secs)}])
             return
-        pos = positions(self.orders.mine(mid))
+        pos = positions(self._with_local_backs(mid, self.orders.mine(mid)))
         if b.status != "OPEN" or b.inplay:
             if any(p["lay_matched"] > 0 and not p["closed"] for p in pos.values()):
                 self._held(mid, pos, secs, "the market closed before the green-up")
@@ -560,12 +589,14 @@ class EarlyLay:
             levels = list(q.back) if q else []
             if p["to_cover"] > 0 and levels and secs > self.cfg["give_up_seconds"]:
                 # down the best three back prices; a part matched is kept and the rest tried next second
-                limit = ladder_limit(levels, p["to_cover"])
-                stake = _floor2(p["to_cover"] / limit)
+                limit, stake = ladder_stake(levels, p["to_cover"])
+                stake = _floor2(stake)
                 if stake >= mn:
                     ref = f"{REF}{self.day:%m%d}-{mid[-8:]}-{sid}-g"
                     fill = self.orders.back(mid, sid, limit, stake, ref, min_fill=mn)
                     if fill is not None and fill.status == "SUCCESS" and fill.matched > 0:
+                        self._backs.setdefault(mid, {})[str(fill.bet_id or f"local-{len(self._backs.get(mid, {}))}")] = (
+                            sid, ref, float(fill.matched), float(fill.avg_price or limit))
                         p["back_matched"] += fill.matched
                         p["back_value"] += fill.matched * float(fill.avg_price or limit)
                         p["to_cover"] = p["lay_value"] - p["back_value"]
@@ -607,6 +638,15 @@ class EarlyLay:
         if not left:
             self.greened.add(mid)
             self.laid.pop(mid, None)
+
+    def _with_local_backs(self, mid: str, orders: list[dict]) -> list[dict]:
+        """Betfair's orders on the market with every green-up back this session saw matched and Betfair does not yet
+        list (by bet id): a fill missing from listCurrentOrders a second later would otherwise be backed again."""
+        seen = {str(o.get("betId")) for o in orders if o.get("betId")}
+        extra = [{"selectionId": sid, "side": "BACK", "customerOrderRef": ref, "sizeMatched": m,
+                  "averagePriceMatched": a, "betId": bid}
+                 for bid, (sid, ref, m, a) in self._backs.get(mid, {}).items() if bid not in seen]
+        return list(orders) + extra
 
     def _close_at_sp(self, mid: str, sid: int, S: float, m: float, base: dict) -> list[dict]:
         """The lay stake still open, ``S`` at ``m``, closed by a back at the SP of the same stake."""
@@ -807,14 +847,18 @@ def run_many(traders: list, until: datetime, sleep=time.sleep) -> list[dict]:
     return out
 
 
-def replay(rows: pd.DataFrame, books: pd.DataFrame, cfg: dict | None = None) -> pd.DataFrame:
+def replay(rows: pd.DataFrame, books: pd.DataFrame, cfg: dict | None = None, final: dict | None = None) -> pd.DataFrame:
     """The lays the rest-only guard blocked (ledger rows ``no_lay`` 'at or above the mid'), replayed on the books after
     them (the owner, 3 Nov: "how would the races post 14:31 have looked without the guard"): matched at once at the
     best lay price where it was at or under our price, else resting at our price and matched once a later trade
     reached it; greened up at the best back price of the last book at least ``green_seconds`` before the off, the stake
     as the trader's (``stake_for``). ``books``: rows of market_id, selection_id, polled (UTC), back1, lay1,
-    last_traded, the pre-off books."""
+    last_traded, the pre-off books. With ``cfg['fill']`` 'through' a resting lay is matched only once a later book's
+    best lay price is at or under ours (the fill the reconciliation trusts), not on a trade at it. With
+    ``cfg['close']`` 'sp' the lay is closed by a back at the SP for its stake instead: settled from ``final``
+    ((market, selection) -> (SP, won)), stake x (SP - matched price) if the dog won, else 0."""
     cfg = cfg or CONFIG
+    final = final or {}
     out = []
     b = books.assign(polled=pd.to_datetime(books.polled, utc=True), market_id=books.market_id.astype(str),
                      selection_id=pd.to_numeric(books.selection_id, errors="coerce"))
@@ -837,12 +881,25 @@ def replay(rows: pd.DataFrame, books: pd.DataFrame, cfg: dict | None = None) -> 
         if lay1 is not None and lay1 <= price + 1e-9:
             m, how = lay1, "taken at once"
         else:
-            lt = pd.to_numeric(after.last_traded, errors="coerce")
-            hit = after[lt <= price + 1e-9]
+            if cfg.get("fill") == "through":
+                hit = after[pd.to_numeric(after.lay1, errors="coerce").between(1.0 + 1e-9, price + 1e-9)]
+                how = "rested, then offered at our price"
+            else:
+                hit = after[pd.to_numeric(after.last_traded, errors="coerce") <= price + 1e-9]
+                how = "rested, then traded at our price"
             if not len(hit):
                 out.append({**row, "matched": False, "note": "resting: never reached"})
                 continue
-            m, how = price, "rested, then traded at our price"
+            m = price
+        if cfg.get("close") == "sp":
+            sp, won = final.get((str(r.market_id), float(r.selection_id)), (None, None))
+            if sp is None or won is None:
+                out.append({**row, "matched": True, "matched_at": m, "note": f"{how}; SP or result not yet in"})
+                continue
+            out.append({**row, "matched": True, "matched_at": m, "greened_at": f"SP {sp:g}",
+                        "pnl": round(stake * (sp - m), 2) if won == 1 else 0.0,
+                        "note": f"{how}; closed at the SP, {'won' if won == 1 else 'lost'}"})
+            continue
         last = g[(g.polled <= off - pd.Timedelta(seconds=cfg["green_seconds"])) & (g.polled > t)]
         last = last[pd.to_numeric(last.back1, errors="coerce") > 1]
         if not len(last):
@@ -852,6 +909,13 @@ def replay(rows: pd.DataFrame, books: pd.DataFrame, cfg: dict | None = None) -> 
         out.append({**row, "matched": True, "matched_at": m, "greened_at": B, "pnl": round(stake * (1 - m / B), 2),
                     "note": how})
     return pd.DataFrame(out)
+
+
+def replay_finals(day: date) -> dict:
+    """(market, selection) -> (SP, won) from the recorders' settled reads of the day (research.greyhound.fill_recon)."""
+    from betfair_recorder import _read_day_csv
+    from research.greyhound.fill_recon import _final
+    return _final(*[_read_day_csv(day, n) for n in ("books_greyhound_live.csv", "books_greyhound.csv")])
 
 
 def replay_books(day: date) -> list[tuple[str, pd.DataFrame]]:
@@ -871,18 +935,21 @@ def replay_books(day: date) -> list[tuple[str, pd.DataFrame]]:
     return parts
 
 
-def replay_on_books(rows: pd.DataFrame, parts: list, cfg: dict | None = None) -> pd.DataFrame:
-    """``replay`` row by row on the first books that cover the dog (the live key's, then the recorder's)."""
+def replay_on_books(rows: pd.DataFrame, parts: list, cfg: dict | None = None, final: dict | None = None) -> pd.DataFrame:
+    """``replay`` row by row on the first books that cover the dog (the live key's, then the recorder's; with the
+    'through' fill the live key's only, as the reconciliation trusts)."""
+    if (cfg or {}).get("fill") == "through":
+        parts = [(n, p) for n, p in parts if "live" in n]
     res = []
     for _, r in rows.iterrows():
         got = None
         for name, pre in parts:                                  # the live-key books first, where they cover it
-            one = replay(pd.DataFrame([r]), pre, cfg)
+            one = replay(pd.DataFrame([r]), pre, cfg, final)
             if len(one) and one.note.iloc[0] != "no books for this dog":
                 got = one.assign(books="live key" if "live" in name else "recorder, ~90 s stale")
                 break
         res.append(got if got is not None else replay(pd.DataFrame([r]), pd.DataFrame(
-            columns=["market_id", "selection_id", "polled", "back1", "lay1", "last_traded"]), cfg).assign(books="none"))
+            columns=["market_id", "selection_id", "polled", "back1", "lay1", "last_traded"]), cfg, final).assign(books="none"))
     return pd.concat(res, ignore_index=True) if res else pd.DataFrame()
 
 
@@ -1053,14 +1120,16 @@ def reconcile(store, x, day: date, comm: float | None = None, prefix: str = PREF
     return out
 
 
-def paper_table(store, day: date, name: str, parts: list | None = None) -> str:
+def paper_table(store, day: date, name: str, parts: list | None = None, final: dict | None = None) -> str:
     """A paper book's day (``PAPER_VARIANTS``): the lays it would have placed, replayed on the books (``replay``):
     matched at once where the best lay price was at or under ours, else when a later trade reached it (no queue: a
     paper fill is the best case), greened up at the best back price 5 s or more before the off."""
     cfg = {**CONFIG, **PAPER_VARIANTS[name]}
     book = f"paper-{name}"
     desc = (f"{'short-priced (mid under ' + format(SHORT_PRICE, 'g') + ')' if cfg['gate'] == 'short' else 'drifters'}"
-            f", laid at {1 - cfg['margin']:.0%} of the forecast SP")
+            f", laid at {1 - cfg['margin']:.0%} of the forecast SP"
+            + (f", no lay under {cfg['min_price']:g}" if cfg.get("min_price") else "")
+            + (", closed at the SP (fill: a later book offers our price)" if cfg.get("close") == "sp" else ""))
     head = f"### Early lay on paper, {name}: {desc} ({day:%Y-%m-%d})"
     st = store.get(f"{PREFIX}/{book}/{day:%Y-%m-%d}/status.json")
     if st:
@@ -1074,12 +1143,15 @@ def paper_table(store, day: date, name: str, parts: list | None = None) -> str:
     lays = led[(led.action == "lay") & pd.to_numeric(led.price, errors="coerce").gt(1)]
     if not len(lays):
         return f"{head}\n\nno lays yet ({int((led.action == 'no_lay').sum())} dogs looked at)\n"
-    d = replay_on_books(lays, replay_books(day) if parts is None else parts, cfg)
+    if final is None and cfg.get("close") == "sp":
+        final = replay_finals(day)
+    d = replay_on_books(lays, replay_books(day) if parts is None else parts, cfg, final)
     m = d[d.matched == True]                                              # noqa: E712
     pnl = pd.to_numeric(m.pnl, errors="coerce")
     tot = float(pnl.fillna(0).sum())
     pending = int((d.note == "no books for this dog").sum())
-    L = [head, "", f"{len(d)} lays in {d.race_time.nunique()} races; {len(m)} would have matched; greened up "
+    L = [head, "", f"{len(d)} lays in {d.race_time.nunique()} races; {len(m)} would have matched; "
+         f"{'closed at the SP' if cfg.get('close') == 'sp' else 'greened up'} "
          f"{int(pnl.notna().sum())}, **GBP{tot:+.2f}** at GBP{cfg['liability']:.0f} a lay"
          + (f" ({tot / max(float(m.stake.sum()), 1e-9):+.1%} of the matched stake)" if len(m) else "")
          + (f"; {pending} not yet in the books" if pending else "") + ". A paper fill takes no place in the queue: "
@@ -1096,10 +1168,15 @@ def paper_table(store, day: date, name: str, parts: list | None = None) -> str:
 def paper_tables(store, day: date) -> str:
     """Every paper book's table, the books read once."""
     parts = replay_books(day)
+    try:
+        final = replay_finals(day)
+    except Exception as exc:                                       # the SP books unread: those tables say not yet in
+        log.warning("settled reads not read (%s)", exc)
+        final = {}
     out = []
     for name in PAPER_VARIANTS:
         try:
-            out.append(paper_table(store, day, name, parts))
+            out.append(paper_table(store, day, name, parts, final))
         except Exception as exc:                                  # one book's failure never hides the others
             out.append(f"### Early lay on paper, {name}\n\nnot scored ({str(exc)[:160]})\n")
     return "\n".join(out)

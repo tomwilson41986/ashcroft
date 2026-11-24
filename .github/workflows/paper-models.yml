@@ -45,6 +45,23 @@ on:
         type: choice
         options: ['paper', 'live']
         default: 'paper'
+      take_close:
+        description: "the greyhound take and close: paper (logged, nothing sent) or live (real orders)"
+        required: false
+        type: choice
+        options: ['paper', 'live']
+        default: 'paper'
+      take_close_daily_loss:
+        description: "the take and close's daily loss limit in GBP (else the repository variable; none: nothing sent)"
+        required: false
+        type: string
+        default: ''
+      sp_lay:
+        description: "the residual's lay at the SP, win and place: paper (logged, nothing sent) or live (real orders, GBP50 a lay, GBP1,000 a day)"
+        required: false
+        type: choice
+        options: ['paper', 'live']
+        default: 'paper'
 
 permissions:
   contents: read
@@ -56,7 +73,7 @@ concurrency:
 jobs:
   paper:
     runs-on: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
-    timeout-minutes: 1000
+    timeout-minutes: 1030    # from 05:45 UTC to 22:55 UTC: the lay at the SP runs to 22:30 UK, the last race (22:20 on 21 Nov)
     steps:
       - name: Not on the live trader's runner
         id: runner_guard
@@ -130,6 +147,16 @@ jobs:
           GREYHOUND_QUOTE_MID: ${{ inputs.quote_mid || vars.GREYHOUND_QUOTE_MID || 'paper' }}
           # live quotes also need the owner's daily loss limit in GBP (the owner, 5 Nov 2026), else none is sent
           GREYHOUND_QUOTE_MID_DAILY_LOSS: ${{ vars.GREYHOUND_QUOTE_MID_DAILY_LOSS }}
+          # the take and close (greyhound/take_close.py; the owner, 18 Nov 2026: "Run the take-and-close LIVE",
+          # "GBP100 a bet"): real orders only with GREYHOUND_TAKE_CLOSE=live and a daily loss limit in GBP
+          # (vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS); its own STOP (greyhound/take_close/STOP, and trading/STOP)
+          GREYHOUND_TAKE_CLOSE: ${{ inputs.take_close || vars.GREYHOUND_TAKE_CLOSE || 'paper' }}
+          GREYHOUND_TAKE_CLOSE_DAILY_LOSS: ${{ inputs.take_close_daily_loss || vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}
+          # the residual's lay at the SP (greyhound/sp_lay.py; the owner, 21 Nov 2026: "Put any possible profitable
+          # strategies live": the bottom-10% SP lay, GBP50 a lay, to win and, from that day, to be placed, GBP1,000 a
+          # day for both): real orders only with
+          # GREYHOUND_SP_LAY=live; its own STOP (greyhound/sp_lay/STOP, and trading/STOP)
+          GREYHOUND_SP_LAY: ${{ inputs.sp_lay || vars.GREYHOUND_SP_LAY || 'paper' }}
         run: |
           set +e
           # the greyhound model (greyhound/live.py, greyhound/live_config.json): each GB greyhound runner backed once on
@@ -141,6 +168,10 @@ jobs:
           # the greyhound books every 5 s near the off, with traded volume (reports/greyhound_roadmap.md 0.2)
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.book_record --until 21:30 > "$RUNNER_TEMP/greyhound_books.log" 2>&1 &
           GBR=$!
+          # the Australian greyhound WIN books to 13:30 UK, read-only, for the paper test (the owner, 17 Nov 2026: "Record
+          # the Australian books live for a paper test"; greyhound/au_paper.py); greyhound-au-paper.yml records the night
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.book_record --countries AU --market-types WIN --tag greyhound_au_d --every-near 15 --every-far 60 --until 13:30 > "$RUNNER_TEMP/greyhound_au_books.log" 2>&1 &
+          GAU=$!
           # Betfair's Exchange Stream for the greyhound markets, raw (the owner, 5 Nov 2026, the audit C1): the full ladder,
           # the volume traded at each price and every change, read-only (no order subscription), to s3 betfair_stream/
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.stream_record --until 21:30 > "$RUNNER_TEMP/greyhound_stream.log" 2>&1 &
@@ -150,11 +181,17 @@ jobs:
           GEL=$!
           # its paper books beside it (the owner, 4 Nov 2026: "run this on paper. Keep running 10% too"): the rule at 10%
           # and the short-priced lay at 20% and 10%, on the same books, never --live: nothing is sent
-          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --paper-variants m10,short20,short10 --until 21:30 > "$RUNNER_TEMP/greyhound_early_lay_paper.log" 2>&1 &
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --paper-variants m10,short20,short10,spclose,spclose3 --until 21:30 > "$RUNNER_TEMP/greyhound_early_lay_paper.log" 2>&1 &
           GELP=$!
           # the greyhound quotes around the mid (greyhound/quote_mid.py): real orders only when GREYHOUND_QUOTE_MID is 'live'
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.quote_mid --trade --live --until 21:30 > "$RUNNER_TEMP/greyhound_quote_mid.log" 2>&1 &
           GQM=$!
+          # the take and close (greyhound/take_close.py): real orders only when GREYHOUND_TAKE_CLOSE is 'live'
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.take_close --trade --live --until 21:30 > "$RUNNER_TEMP/greyhound_take_close.log" 2>&1 &
+          GTC=$!
+          # the residual's lay at the SP (greyhound/sp_lay.py): real orders only when GREYHOUND_SP_LAY is 'live'
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.sp_lay --trade --live --until 22:30 > "$RUNNER_TEMP/greyhound_sp_lay.log" 2>&1 &
+          GSL=$!
           # the favourite back on paper (greyhound/fav_back.py; the owner, 10 Nov 2026: "back and trade out at BFSP";
           # "Yes build it"): reads the books, sends no order (the module has no order call); first the last days settled
           timeout 600 python -m greyhound.fav_back --settle --days 3 > "$RUNNER_TEMP/greyhound_fav_back_settle.log" 2>&1 || true
@@ -171,6 +208,7 @@ jobs:
           wait "$GHT"; GC=$?; echo "greyhound paper trader exited $GC"
           tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
           wait "$GBR"; echo "greyhound book record exited $?"
+          wait "$GAU"; echo "australian book record exited $?"; tail -n 3 "$RUNNER_TEMP/greyhound_au_books.log"
           wait "$GSR"; echo "greyhound stream record exited $?"; tail -n 10 "$RUNNER_TEMP/greyhound_stream.log"
           tail -n 5 "$RUNNER_TEMP/greyhound_books.log"
           wait "$GEL"; ELC=$?; echo "greyhound early lay ($GREYHOUND_EARLY_LAY) exited $ELC"
@@ -179,9 +217,13 @@ jobs:
           tail -n 20 "$RUNNER_TEMP/greyhound_early_lay_paper.log"
           wait "$GQM"; QMC=$?; echo "greyhound quotes around the mid ($GREYHOUND_QUOTE_MID) exited $QMC"
           tail -n 40 "$RUNNER_TEMP/greyhound_quote_mid.log"
+          wait "$GTC"; TCC=$?; echo "greyhound take and close ($GREYHOUND_TAKE_CLOSE) exited $TCC"
+          tail -n 40 "$RUNNER_TEMP/greyhound_take_close.log"
+          wait "$GSL"; SLC=$?; echo "greyhound lay at the SP ($GREYHOUND_SP_LAY) exited $SLC"
+          tail -n 40 "$RUNNER_TEMP/greyhound_sp_lay.log"
           wait "$GFB"; FBC=$?; echo "greyhound favourite back (paper) exited $FBC"
           tail -n 20 "$RUNNER_TEMP/greyhound_fav_back.log"
           wait "$DOGS"; echo "greyhound market record exited $?"; tail -n 3 "$RUNNER_TEMP/greyhound.log"
           # a trader that crashed fails the job, so GitHub's failure notice reaches the owner (the audit A6); before,
           # only the paper trader's exit counted
-          [ "$GC" = 0 ] && [ "$ELC" = 0 ] && [ "$ELP" = 0 ] && [ "$QMC" = 0 ] && [ "$FBC" = 0 ]
+          [ "$GC" = 0 ] && [ "$ELC" = 0 ] && [ "$ELP" = 0 ] && [ "$QMC" = 0 ] && [ "$FBC" = 0 ] && [ "$TCC" = 0 ] && [ "$SLC" = 0 ]

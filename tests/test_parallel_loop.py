@@ -440,3 +440,180 @@ def test_the_comparison_reads_each_code_apart():
     var = base.assign(predicted_bfsp=[4.0, 2.0, 3.0, 1.5])            # worse on one jumps runner only
     t = cmp_runs.by_code(cmp_runs.paired(base, var), base).set_index("code")
     assert t.loc["jumps", "delta"] > 0 and t.loc["flat/aw", "delta"] == 0 and t.loc["jumps", "races"] == 1
+
+
+def test_the_folds_step_91_days_unless_the_config_says():
+    args = rl.common_args(CFG)
+    assert args[args.index("--step-days") + 1] == "91" and args[args.index("--val-window") + 1] == "91"
+    args = rl.common_args({**CFG, "step_days": 28})
+    assert args[args.index("--step-days") + 1] == "28" and args[args.index("--val-window") + 1] == "28"
+    assert rl.common_args({**CFG, "step_days": 28})[-1] == rl.common_args(CFG)[-1]
+
+
+# ---- the figure member and its blend (the owner's model brief, Phase 3, 19 Nov 2026)
+
+def test_a_blend_mixes_a_figure_member_into_a_price_arm_or_an_earlier_ensemble():
+    cfg = {**CFG, "variants": [{"name": "st"}, {"name": "dml"}, {"name": "rx"},
+                               {"name": "fig", "args": "--figure-target"}],
+           "ensembles": [{"name": "gate", "arms": ["st", "dml"], "gate": {"arm": "rx", "weights": [1, 0.5, 0]}},
+                         {"name": "gate_fig", "blend": {"base": "gate", "figure": "fig"}}]}
+    es = rl.ensembles(cfg)
+    assert es[1] == {"name": "gate_fig", "arms": ["gate", "fig"],
+                     "blend": {"base": "gate", "figure": "fig", "grid": rl.BLEND_GRID}}
+    assert rl.figure_arms(cfg) == {"fig"} and "fig" in rl.all_arms(cfg)          # fitted like any arm
+    for bad in ([{"name": "x", "blend": {"base": "st", "figure": "dml"}}],         # not a figure member
+                [{"name": "x", "blend": {"base": "fig", "figure": "fig"}}],        # the base must be a price
+                [{"name": "x", "blend": {"base": "later", "figure": "fig"}}],      # an ensemble not yet built
+                [{"name": "x", "blend": {"base": "st", "figure": "fig", "grid": [0, 2]}}],
+                [{"name": "x", "arms": ["st", "fig"]}]):                           # a figure is never averaged
+        with pytest.raises(SystemExit):
+            rl.ensembles({**cfg, "ensembles": bad})
+
+
+def _blend_files(tmp_path, informative=True, seed=3):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for fold in range(4):
+        for r in range(150):
+            p = rng.dirichlet(np.ones(6) * 2)
+            truth = np.log(1 / p)
+            noise = rng.normal(0, 0.4, 6)
+            for i in range(6):
+                rows.append({"race_date": f"2025-0{fold + 1}-{1 + r % 28:02d}", "race_time": f"{r}", "track": "york",
+                             "horse_name": f"h{fold}_{r}_{i}", "fold_idx": fold, "bfsp": float(np.exp(truth[i])),
+                             "predicted_bfsp": float(np.exp(truth[i] + noise[i])), "overlay_pct": 0.0,
+                             "predicted_figure": float(noise[i] if informative else rng.normal())})
+    df = pd.DataFrame(rows)
+    df.drop(columns="predicted_figure").to_csv(tmp_path / "oos_base.csv", index=False)
+    df[["race_date", "race_time", "track", "horse_name", "predicted_figure", "fold_idx"]].to_csv(
+        tmp_path / "oos_fig.csv", index=False)
+    return df
+
+
+def test_the_blend_weight_comes_from_earlier_folds_and_the_first_fold_keeps_the_base(tmp_path):
+    df = _blend_files(tmp_path)               # the figure is the base's error: the blend should take it
+    b = rl.blend_figure(tmp_path / "oos_base.csv", tmp_path / "oos_fig.csv", rl.BLEND_GRID, tmp_path / "out.csv")
+    out = pd.read_csv(tmp_path / "out.csv", dtype={"race_time": str})
+    assert b[0] == 0.0 and all(b[k] > 0 for k in (1, 2, 3))
+    first = out["fold_idx"] == 0
+    assert np.allclose(out.loc[first, "predicted_bfsp"], df.loc[first, "predicted_bfsp"]       # b = 0: the base's
+                       * (1 / df.loc[first, "predicted_bfsp"]).groupby(                         # prices, renormalised
+                           (df["race_date"] + df["race_time"])[first]).transform("sum"))
+    race = out["race_date"] + out["race_time"]
+    assert np.allclose((1 / out["predicted_bfsp"]).groupby(race).sum(), 1.0)
+    err = lambda p: np.abs(np.log(p) - np.log(df["bfsp"]))[~first].mean()              # noqa: E731
+    assert err(out["predicted_bfsp"]) < err(df["predicted_bfsp"])
+
+
+def test_an_uninformative_figure_gets_little_weight(tmp_path):
+    _blend_files(tmp_path, informative=False)
+    b = rl.blend_figure(tmp_path / "oos_base.csv", tmp_path / "oos_fig.csv", rl.BLEND_GRID, tmp_path / "out.csv")
+    assert max(b.values()) <= 0.04
+
+
+def test_the_figure_member_trains_on_earlier_rows_with_a_figure_and_prices_every_fold_row():
+    df = _frame()
+    label = (df["a"] * 2.0).to_numpy().copy()
+    label[::5] = np.nan                                                    # non-finishers: no figure
+    sched = {**SCHEDULE, "cfg": TrainConfig(), "fold_anchor": None, "train_from": None}
+    evaluate_oos.FIGURE_ROUNDS, rounds = 50, evaluate_oos.FIGURE_ROUNDS
+    try:
+        out = evaluate_oos.figure_walk_forward(df, ["a", "b", "c"], label, sched)
+    finally:
+        evaluate_oos.FIGURE_ROUNDS = rounds
+    plan = evaluate_oos.fold_plan(df["race_date"], **sched)
+    assert sorted(out["fold_idx"].unique()) == [p["fold"] for p in plan]
+    assert len(out) == sum(p["n_val"] for p in plan)
+    assert np.corrcoef(out["predicted_figure"], out["a"])[0, 1] > 0.9
+
+
+def test_the_float32_plan_keeps_double_what_a_block_or_the_report_reads():
+    """evaluate_oos.float32_plan (20 Nov 2026): an engine feature is read in single precision from the cache only
+    when no requested block reads it, the prediction file does not carry it and the run does not drop it; a block
+    whose reads are not declared keeps everything double."""
+    import argparse
+    import evaluate_oos as E
+    from model import blocks
+    a = argparse.Namespace(blocks="market_rating,debut,pace_v2", drop_features="sire_runners,damsire_runners",
+                           drop_feature_list=None, withhold=None)
+    early, reads = E.float32_plan(a)
+    assert reads == blocks.reads_of(["market_rating", "debut", "pace_v2"]) and "rs_epf" in reads
+    assert early and not [c for c in early if c in reads or c in E.CARRY or c.startswith("sire_runners")]
+    assert set(early) <= set(E.ALL_FEATURE_COLS)
+    a.blocks = "market_rating,ae"                       # ae is not a drop-in block: its reads are unknown
+    assert E.float32_plan(a) == ((), None)
+    a.blocks, a.withhold = "market_rating", "freshness"
+    assert E.float32_plan(a)[0] == ()
+
+
+def test_the_figure_label_reads_the_results_columns_and_refuses_a_frame_cut_to_the_inputs():
+    """Iteration 131's first run built the label after the frame was cut to the model's inputs: no margins, no
+    prize, so every figure was 0 or missing and the member predicted 0.0 for every runner. The label is non-trivial
+    on a frame with the results' columns and refused on one without."""
+    import evaluate_oos as E
+    from tests import test_feature_blocks as F
+    base = F._history()
+    label = E.figure_label(base)
+    assert np.isfinite(label).mean() > 0.5 and np.nanstd(label) > 0
+    cut = base.drop(columns=[c for c in ("LB", "total_dst_bt") if c in base.columns])
+    with pytest.raises(ValueError, match="lacks"):
+        E.figure_label(cut)
+    with pytest.raises(ValueError, match="lacks"):
+        E.figure_label(base.drop(columns=["prize_money"]))
+
+
+def test_a_figure_member_that_predicts_one_value_is_refused():
+    import evaluate_oos as E
+    rng = np.random.default_rng(3)
+    days = pd.date_range("2022-01-01", "2025-06-30", freq="D")
+    df = pd.DataFrame({"race_date": np.repeat(days, 20), "x": rng.normal(size=len(days) * 20)})
+    schedule = dict(min_train_days=365, val_window_days=90, step_days=90, cfg=E.TrainConfig(), eval_from="2025-01-01",
+                    eval_until=None, fold_anchor=None, train_from=None)
+    with pytest.raises(ValueError, match="every prediction"):
+        E.figure_walk_forward(df, ["x"], np.zeros(len(df)), schedule)
+
+
+def test_releasing_the_matrix_before_a_one_fold_fit_changes_no_prediction():
+    """A loop job fits one fold; the matrix is dropped once that fold's rows are copied out (20 Nov 2026: a long fit
+    still went into swap with it held). Same predictions, and the caller's own frame is untouched."""
+    df = _frame()
+    before = df.copy()
+    serial = evaluate_oos.walk_forward_predict(df, ["a"], **SCHEDULE)
+    k = int(sorted(serial["fold_idx"].unique())[-1])
+    kept = evaluate_oos.walk_forward_predict(df, ["a"], only_fold=k, **SCHEDULE)
+    freed = evaluate_oos.walk_forward_predict(df, ["a"], only_fold=k, release_frame=True, **SCHEDULE)
+    pd.testing.assert_frame_equal(kept.reset_index(drop=True), freed.reset_index(drop=True))
+    pd.testing.assert_frame_equal(df, before)
+    # without only_fold nothing is released: every fold is still fitted
+    every = evaluate_oos.walk_forward_predict(df, ["a"], release_frame=True, **SCHEDULE)
+    assert sorted(every["fold_idx"].unique()) == sorted(serial["fold_idx"].unique())
+
+
+def test_a_partial_last_fold_is_scored_only_when_asked_and_changes_no_other_fold():
+    """The schedule plans whole windows only, so the newest weeks are never scored. The Phase 6 read (20 Nov 2026)
+    announced the fold 26 Sep - 16 Nov and the plan left it out; partial_last adds it, up to eval_until, and every
+    other fold is as it was."""
+    dates = pd.Series(pd.date_range("2021-01-01", "2026-11-16", freq="D").repeat(3))
+    kw = dict(min_train_days=365, val_window_days=91, step_days=91, eval_from="2026-03-28", eval_until="2026-11-17",
+              fold_anchor="2021-01-01", train_from="2021-01-01")
+    whole = evaluate_oos.fold_plan(dates, **kw)
+    with_last = evaluate_oos.fold_plan(dates, partial_last=True, **kw)
+    assert [f["val_start"] for f in whole] == ["2026-03-28", "2026-06-27"]
+    assert with_last[:2] == whole
+    assert len(with_last) == 3 and with_last[2]["val_start"] == "2026-09-26" and with_last[2]["fold"] == 2
+    assert with_last[2]["n_val"] == 3 * 52                     # 26 Sep to 16 Nov, the rows before eval_until
+    # the last fold trains on nothing from its own window or the purge before it
+    k, start, end, tr, va = list(evaluate_oos.evaluated_folds(dates, partial_last=True, **kw))[2]
+    d = pd.to_datetime(dates)
+    assert d[tr].max() < start - pd.Timedelta(days=29) and d[va].min() == start and d[va].max() == pd.Timestamp("2026-11-16")
+    # without eval_until there is no partial fold: the flag alone opens nothing
+    kw2 = dict(kw, eval_until=None)
+    assert evaluate_oos.fold_plan(dates, partial_last=True, **kw2) == evaluate_oos.fold_plan(dates, **kw2)
+
+
+def test_the_loop_passes_the_partial_fold_only_in_a_declared_final_read():
+    cfg = {"final": True, "bfsp_until": "2026-11-17", "bfsp_from": "2026-09-26", "partial_last_fold": True}
+    assert "--partial-last-fold" in rl.common_args(cfg)
+    assert "--partial-last-fold" not in rl.common_args({"bfsp_from": "2025-01-01"})
+    with pytest.raises(SystemExit):
+        rl.common_args({"partial_last_fold": True, "bfsp_from": "2025-01-01"})

@@ -1,0 +1,5 @@
+{
+  "commit": "3cf54ea1e31413f0b6fcc60c9f9b6cabb40a4722",
+  "until": "2026-12-05",
+  "note": "The served stack blend gate_st (bfsp-model-63/64/65, 1,181 features, served from 15 Nov) priced beside gate_stn from 22 Nov to 5 Dec 2026 (ledger serve-stn-1121): both on the same morning card and database (each row's db_modified and live_modified say whether paired). scripts/shadow_predict.py, predict-shadow.yml 04:25 UTC."
+}

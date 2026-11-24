@@ -1,0 +1,63 @@
+##[group]phase4_rules_1119
+runners scored: 90,579 in 13,428 races, 2025-02-01 to 2026-03-31
+
+walk-forward from 2025-05 (329 days): the rule chosen each month on the months before it
+   2025-05: bar 2%, price 1-200, field >= 2
+   2025-06: bar 0%, price 1-200, field >= 2
+   2025-07: bar 0%, price 1-200, field >= 2
+   2025-08: bar 0%, price 1-200, field >= 2
+   2025-09: bar 0%, price 1-200, field >= 2
+   2025-10: bar 0%, price 1-200, field >= 2
+   2025-11: bar 0%, price 1-200, field >= 2
+   2025-12: bar 0%, price 1-200, field >= 2
+   2026-01: bar 0%, price 1-200, field >= 2
+   2026-02: bar 0%, price 1-200, field >= 2
+   2026-03: bar 0%, price 1-200, field >= 2
+   net CLV GBP: walk-forward +101,520, the live rule's settings +91,876; per day +29.31 (90% +22.68 to +35.78)
+
+   deflated Sharpe of the walk-forward choice (40 trials): {'n_obs': 329, 'n_trials': 40, 'threshold': 0.95, 'sharpe': 1.925497, 'sr_star': 0.135058, 'dsr': 1.0, 'sr_variance': 0.003805, 'passed': True, 'reason': ''}
+   probability of backtest overfitting across the 40 rules: 0.3334887334887335 over 12870 splits
+
+   every rule over the same days (net CLV, 2% commission):
+                   rule   net_gbp   turnover  net_pct
+bar 0%, 1-200, field>=2 102786.64 1581398.74     6.50
+ bar 0%, 1-50, field>=2 101743.98 1577733.03     6.45
+bar 2%, 1-200, field>=2  95953.34 1237276.76     7.76
+ bar 2%, 1-50, field>=2  94955.26 1233840.31     7.70
+bar 3%, 1-200, field>=2  91875.64 1069092.48     8.59
+ bar 3%, 1-50, field>=2  90887.02 1065775.27     8.53
+bar 0%, 1-200, field>=6  85820.54 1241169.87     6.91
+ bar 0%, 1-50, field>=6  84842.39 1237623.71     6.86
+bar 5%, 1-200, field>=2  81353.75  790880.31    10.29
+bar 2%, 1-200, field>=6  80848.57  986977.95     8.19
+ bar 5%, 1-50, field>=2  80363.59  787798.71    10.20
+ bar 2%, 1-50, field>=6  79915.00  983661.04     8.12
+bar 3%, 1-200, field>=6  77548.46  861800.22     9.00
+ bar 3%, 1-50, field>=6  76624.82  858599.79     8.92
+bar 0%, 3-200, field>=2  76531.40 1024913.95     7.47
+ bar 0%, 3-50, field>=2  75488.74 1021248.23     7.39
+bar 2%, 3-200, field>=2  73864.38  840135.29     8.79
+ bar 2%, 3-50, field>=2  72866.30  836698.84     8.71
+bar 3%, 3-200, field>=2  72581.43  755019.06     9.61
+ bar 3%, 3-50, field>=2  71592.81  751701.85     9.52
+bar 5%, 1-200, field>=6  69499.03  655816.07    10.60
+bar 0%, 3-200, field>=6  68690.29  906935.27     7.57
+ bar 5%, 1-50, field>=6  68573.05  652846.38    10.50
+ bar 0%, 3-50, field>=6  67712.14  903389.10     7.50
+bar 2%, 3-200, field>=6  66203.91  743166.87     8.91
+bar 5%, 3-200, field>=2  65722.20  596520.81    11.02
+ bar 2%, 3-50, field>=6  65270.34  739849.97     8.82
+bar 3%, 3-200, field>=6  64987.18  668056.37     9.73
+ bar 5%, 3-50, field>=2  64732.04  593439.22    10.91
+ bar 3%, 3-50, field>=6  64063.54  664855.94     9.64
+bar 8%, 1-200, field>=2  64013.63  503151.13    12.72
+ bar 8%, 1-50, field>=2  63052.44  500430.64    12.60
+bar 5%, 3-200, field>=6  58741.56  527029.18    11.15
+ bar 5%, 3-50, field>=6  57815.58  524059.49    11.03
+bar 8%, 1-200, field>=6  55371.79  427634.52    12.95
+bar 8%, 3-200, field>=2  54698.87  404397.64    13.53
+ bar 8%, 1-50, field>=6  54476.88  425017.85    12.82
+ bar 8%, 3-50, field>=2  53737.68  401677.15    13.38
+bar 8%, 3-200, field>=6  48571.45  358974.06    13.53
+ bar 8%, 3-50, field>=6  47676.54  356357.39    13.38
+##[endgroup]

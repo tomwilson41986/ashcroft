@@ -1,0 +1,7 @@
+research-iter131-figure-member-171 oos_gate_stn.csv: 11,872 whole races, 104,782 runners, 2024-12-28 to 2025-12-31
+scored months 2025-02 to 2025-12 (11), 10,939 races
+   served : 18,992 bets on 331 days, turnover GBP798,841, net CLV GBP+73,388 (+9.19%), expected CLV mean +9.15%
+   refit  : 22,950 bets on 331 days, turnover GBP1,129,366, net CLV GBP+89,583 (+7.93%), expected CLV mean +11.80%
+
+refit less served, net CLV x stake a day: GBP+48.93 (90% +41.68 to +56.46), sum GBP+16,195 over 331 days, ahead on 251; deflated Sharpe 1.0 (484 trials): pass
+verdict: PASS (positive sum, the 90% day interval above zero, deflated Sharpe >= 0.95)

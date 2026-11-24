@@ -82,6 +82,7 @@ GRID = [(r, q, p0) for r in (0.8, 1.6, 3.2, 6.4) for q in (0.0003, 0.001, 0.003)
 TROUBLE = core.INTERFERENCE
 COST_CAP = 1.5
 BANDS = (350.0, 550.0, 750.0)
+VACANT_TRAPS = 6                     # the boxes a GB start has (``build(vacant_room=True)``: a vacant one is room)
 OFF_EDGES = (5, 8, 11, 15, 22, 36, 61, 101, 181)
 EXP_EDGES = (1, 2, 3, 5, 10, 20, 40)
 
@@ -250,10 +251,22 @@ def ridge(X, C, y: np.ndarray, rows: np.ndarray) -> tuple[float, np.ndarray, np.
     return float(coef[0]), coef[1:1 + k], gamma, float(np.minimum(Cr @ gamma, COST_CAP).mean())
 
 
-def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: bool = True) -> dict:
+def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: bool = True, *,
+               consts: dict | None = None, forget: dict | None = None, pref_post: bool = False) -> dict:
     """Walk the days: each row's expected time from the state after earlier days, then the day's runs update it.
     ``upto``: stop after that day number. ``fit``: refit the covariates' effects and the codes' prices each period
-    (off for the grid over the filter's constants)."""
+    (off for the grid over the filter's constants).
+
+    The variant table (greyhound/pit/xtime2.py, the review of 17 Nov 2026, "xtime"): ``consts`` overrides any of
+    ``k_trap``, ``k_grade``, ``k_pref``, ``std_cap``, ``noisy`` (default: the module's constants); ``forget`` gives
+    the trap and grade effects a half-life in days (``{"trap": d, "grade": d}``; None or inf: a mean that never
+    forgets, as here); ``pref_post`` updates the preferences on the residual after the level's update, not the same
+    residual (the double count). The defaults leave this table's output as it was (tests/test_greyhound_xtime2.py)."""
+    c_ = consts or {}
+    k_trap, k_grade, k_pref = c_.get("k_trap", K_TRAP), c_.get("k_grade", K_GRADE), c_.get("k_pref", K_PREF)
+    std_cap, noisy_c = c_.get("std_cap", STD_CAP), c_.get("noisy", NOISY)
+    hl = {k: v for k, v in (forget or {}).items() if v is not None and np.isfinite(v)}
+    prev_day = None
     n, dn, dog, key, kt, kc, pk, pb = P["n"], P["dn"], P["dog"], P["key"], P["kt"], P["kc"], P["pk"], P["pb"]
     race, meeting, period = P["race"], P["meeting"], P["period"]
     trial = P.get("soft", P["trial"])               # a trial or a handicap: read for the dog's level, nothing else
@@ -280,6 +293,16 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
         today = int(dn[i[0]])
         if upto is not None and today > upto:
             break
+        if hl and prev_day is not None and today > prev_day:   # exponential forgetting: the effects' sums decay a day
+            if "trap" in hl:
+                f = 0.5 ** ((today - prev_day) / hl["trap"])
+                for arr in (Ste, Nte, Skt, Nkt):
+                    arr *= f
+            if "grade" in hl:
+                f = 0.5 ** ((today - prev_day) / hl["grade"])
+                for arr in (Sge, Nge, Skg, Nkg):
+                    arr *= f
+        prev_day = today
         if fit and period[i[0]] != cur:
             cur = period[i[0]]
             # the target of the refit: the residual after the variant with the adjustments put back. The trouble is
@@ -305,10 +328,10 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
         gap = np.where(new, 0.0, today - LAST[d])
         vpre = np.minimum(V[d] + q_ * gap, P0)
         th = M[d]
-        dkv, dbv = Sdk[pk[i]] / (Ndk[pk[i]] + K_PREF), Sdb[pb[i]] / (Ndb[pb[i]] + K_PREF)
+        dkv, dbv = Sdk[pk[i]] / (Ndk[pk[i]] + k_pref), Sdb[pb[i]] / (Ndb[pb[i]] + k_pref)
         # the trap and the grade against the track and trip's average (the standard carries the average)
-        tev = Ste[kt[i]] / (Nte[kt[i]] + K_TRAP) - Skt[k] / (Nkt[k] + K_TRAP)
-        gev = Sge[kc[i]] / (Nge[kc[i]] + K_GRADE) - Skg[k] / (Nkg[k] + K_GRADE)
+        tev = Ste[kt[i]] / (Nte[kt[i]] + k_trap) - Skt[k] / (Nkt[k] + k_trap)
+        gev = Sge[kc[i]] / (Nge[kc[i]] + k_grade) - Skg[k] / (Nkg[k] + k_grade)
         base = th + dkv + dbv + tev + gev + xb[i]
         o["a"][i], o["level"][i], o["sd"][i], o["n"][i] = a[k], th, np.sqrt(vpre + r_), CNT[d]
         o["pref"][i], o["trap"][i], o["grade"][i] = dkv + dbv, tev, gev
@@ -349,7 +372,7 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
         e2 = e1 - cost[j]
         o["e1"][j], o["e2"][j] = e1, e2
         dj, tj = d[ok], trial[j]
-        noisy = np.where(tj | (P["C"][j].getnnz(axis=1) > 0), NOISY, 1.0)
+        noisy = np.where(tj | (P["C"][j].getnnz(axis=1) > 0), noisy_c, 1.0)
         # the dog's level: one update a dog a day (a day's runs averaged)
         du, di = np.unique(dj, return_inverse=True)
         cnt = np.bincount(di).astype(float)
@@ -359,7 +382,8 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
         inn = np.bincount(di, weights=e2) / cnt
         lim = 3.0 * np.sqrt(vp + R)
         gain = vp / (vp + R)
-        M[du] += gain * np.clip(inn, -lim, lim)
+        dM = gain * np.clip(inn, -lim, lim)
+        M[du] += dM
         V[du] = (1.0 - gain) * vp
         CNT[du] += cnt
         LAST[du] = today
@@ -370,7 +394,7 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
             c = np.bincount(inv).astype(float)
             # from the error BEFORE the variant: the variant is the night, the standard what lasts (the first build
             # updated it after the variant, which hid every lasting error from it: run 43055884883)
-            a[ku] += (np.bincount(inv, weights=(e2 + v)[g]) / c) * c / (c + np.minimum(nkey[ku], STD_CAP) + 1.0)
+            a[ku] += (np.bincount(inv, weights=(e2 + v)[g]) / c) * c / (c + np.minimum(nkey[ku], std_cap) + 1.0)
             nkey[ku] += c
             np.add.at(Ste, kt[j][g], (e2 + tev[ok])[g])
             np.add.at(Nte, kt[j][g], 1.0)
@@ -380,9 +404,10 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
             np.add.at(Nkt, k[ok][g], 1.0)
             np.add.at(Skg, k[ok][g], (e2 + gev[ok])[g])
             np.add.at(Nkg, k[ok][g], 1.0)
-        np.add.at(Sdk, pk[j], e2 + dkv[ok])
+        ep = e2 - dM[di] if pref_post else e2                     # the residual the level left (xtime2)
+        np.add.at(Sdk, pk[j], ep + dkv[ok])
         np.add.at(Ndk, pk[j], 1.0)
-        np.add.at(Sdb, pb[j], e2 + dbv[ok])
+        np.add.at(Sdb, pb[j], ep + dbv[ok])
         np.add.at(Ndb, pb[j], 1.0)
         known = ~new
         np.add.at(Scm, kc[i][known], th[known])
@@ -391,25 +416,41 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
     return o
 
 
-def fit_constants(P: dict, y: np.ndarray, early_to: int) -> tuple[dict, list]:
-    """The filter's noise a run and drift a day: the pair with the smallest squared error of the forecasts over the
-    second half of the early days, each against its race's mean error (graded runs of dogs with a run behind them)."""
+def score_rows(P: dict, early_to: int) -> np.ndarray | None:
+    """The rows the early fits are scored on: the second half of the early days, graded runs (None: no early day)."""
     dn = P["dn"]
     seen = dn[dn <= early_to]
     if not len(seen):
-        return {"r": 0.3, "q": 0.001, "p0": 0.3}, []
+        return None
     half = int(np.median(seen))
-    score = (dn > half) & (dn <= early_to) & ~P.get("soft", P["trial"])
+    return (dn > half) & (dn <= early_to) & ~P.get("soft", P["trial"])
+
+
+def forecast_mse(P: dict, o: dict, score: np.ndarray, within: bool = True) -> float:
+    """The mean squared error of the forecasts on ``score`` (runs with a run behind them, no outlier); ``within``:
+    each against its race's mean error (the going is not the dog). NaN with fewer than 100 runs."""
+    k = score & np.isfinite(o["e"]) & (o["n"] >= 1) & (np.abs(o["e"]) <= OUT)
+    if k.sum() < 100:
+        return np.nan
+    ek = o["e"][k]
+    if not within:
+        return float(np.mean(ek ** 2))
+    rc = np.unique(P["race"][k], return_inverse=True)[1]
+    return float(np.mean((ek - (np.bincount(rc, weights=ek) / np.bincount(rc))[rc]) ** 2))
+
+
+def fit_constants(P: dict, y: np.ndarray, early_to: int, grid_rqp: list | None = None,
+                  filter_kw: dict | None = None) -> tuple[dict, list]:
+    """The filter's noise a run and drift a day: the pair with the smallest squared error of the forecasts over the
+    second half of the early days, each against its race's mean error (graded runs of dogs with a run behind them).
+    ``grid_rqp`` and ``filter_kw`` (``run_filter``'s keywords): the variant table's (xtime2); defaults as before."""
+    score = score_rows(P, early_to)
+    if score is None:
+        return {"r": 0.3, "q": 0.001, "p0": 0.3}, []
     grid, best = [], None
-    for r, q, p0 in GRID:
-        o = run_filter(P, y, {"r": r, "q": q, "p0": p0}, upto=early_to, fit=False)
-        k = score & np.isfinite(o["e"]) & (o["n"] >= 1) & (np.abs(o["e"]) <= OUT)
-        if k.sum() >= 100:                                       # against the race's mean error: the going is not the dog
-            rc = np.unique(P["race"][k], return_inverse=True)[1]
-            ek = o["e"][k]
-            mse = float(np.mean((ek - (np.bincount(rc, weights=ek) / np.bincount(rc))[rc]) ** 2))
-        else:
-            mse = np.nan
+    for r, q, p0 in (GRID if grid_rqp is None else grid_rqp):
+        o = run_filter(P, y, {"r": r, "q": q, "p0": p0}, upto=early_to, fit=False, **(filter_kw or {}))
+        mse = forecast_mse(P, o, score)
         grid.append((r, q, p0, round(mse, 5) if np.isfinite(mse) else None))
         if np.isfinite(mse) and (best is None or mse < best[0]):
             best = (mse, {"r": r, "q": q, "p0": p0})
@@ -458,7 +499,14 @@ def with_trials(df: pd.DataFrame, trial_runs: pd.DataFrame | None) -> pd.DataFra
     return pd.concat([df, new[[c for c in new.columns if c in df.columns]]])
 
 
-def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None = None) -> tuple[pd.DataFrame, dict]:
+def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None = None, *, prefix: str = PREFIX,
+          early_fn=None, tune=None, vacant_room: bool = False) -> tuple[pd.DataFrame, dict]:
+    """The table. The keywords are the variant table's (greyhound/pit/xtime2.py); their defaults build this one:
+    ``prefix`` of the columns; ``early_fn(day) -> mask`` the early slice the constants are fitted on (default: before
+    ``FIT_BEFORE``); ``tune(P, y, early_to, name) -> (prm, filter_kw, notes)`` fits the filter (default:
+    ``fit_constants``, no keywords); ``vacant_room``: a vacant box beside the dog is room (the race's slowest expected
+    sectional, as bend.py reads it), not NaN."""
+    PREFIX = prefix                                                    # noqa: N806 (the columns' prefix)
     df = figs if figs is not None else core.per_run_figures(runs)
     rows = df.index                                                    # the table's rows: the trials are read, not written
     df = with_trials(df, (ctx or {}).get("trial_runs"))
@@ -466,9 +514,12 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     df = df.sort_values(["t", "race_id", "trap"], kind="stable")
     race = df.race_id
     day = core.day(df)
-    early = day < pd.Timestamp(FIT_BEFORE)
-    if early.sum() < 0.05 * len(df) and len(df):
-        early = day <= day.sort_values().iloc[int(len(df) * 0.2)]
+    if early_fn is not None:
+        early = early_fn(day)
+    else:
+        early = day < pd.Timestamp(FIT_BEFORE)
+        if early.sum() < 0.05 * len(df) and len(df):
+            early = day <= day.sort_values().iloc[int(len(df) * 0.2)]
     P = prepare(df)
     Y = targets(df)
     early_to = int(P["dn"][early.to_numpy()].max()) if early.any() else -1
@@ -479,8 +530,13 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     L = core.LENGTH_S
     exp_pct = {}
     for name in TARGETS:
-        prm, grid = fit_constants(P, Y[name], early_to)
-        o = run_filter(P, Y[name], prm)
+        if tune is None:
+            prm, grid = fit_constants(P, Y[name], early_to)
+            fkw, tnotes = {}, None
+        else:
+            prm, fkw, tnotes = tune(P, Y[name], early_to, name)
+            grid = tnotes.get("grid", [])
+        o = run_filter(P, Y[name], prm, **fkw)
         per_pct = pd.Series(np.exp(o["a"] / 100.0) / 100.0 / L, index=df.index)       # lengths in 1% of the standard
         pct = pd.Series(o["level"] + o["pref"] + o["trap"] + o["grade"] + o["xb"], index=df.index)
         exp_pct[name] = pct
@@ -516,6 +572,8 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
                             "rmse_within_race_no_dog": round(float(np.sqrt((fm ** 2).mean())), 3)}
         last = o["fits"][max(o["fits"])] if o["fits"] else None
         notes[name] = {"filter": prm, "grid": grid, "by_year": acc, "fits": {p: v["rows"] for p, v in o["fits"].items()}}
+        if tnotes is not None:
+            notes[name]["tuned"] = {k: v for k, v in tnotes.items() if k != "grid"}
         if last is not None:
             inv = {v: c for c, v in P["vocab"].items()}
             price = sorted(((inv[j], round(float(g), 3)) for j, g in enumerate(last["gamma"]) if g != 0.0),
@@ -538,9 +596,16 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     s = out[f"{PREFIX}sec"]
     trap = pd.to_numeric(df.trap, errors="coerce")
     nb = pd.DataFrame({"race": race.to_numpy(), "trap": trap.to_numpy(), "s": s.to_numpy()})
+    if vacant_room:                                  # the race's slowest expected sectional fills a vacant box
+        room = s.groupby(race).transform("min").to_numpy()
     for side, step in (("in", -1), ("out", 1)):
         other = nb.assign(trap=nb.trap - step).rename(columns={"s": "o"}).drop_duplicates(["race", "trap"])
         j = nb.merge(other, on=["race", "trap"], how="left")
+        if vacant_room:                              # a box that exists (1 to 6) with no runner in it: room
+            nbr = nb.trap.to_numpy(float) + step
+            there = nb.merge(other[["race", "trap"]], on=["race", "trap"], how="left", indicator=True)._merge
+            vac = (there.to_numpy() == "left_only") & (nbr >= 1) & (nbr <= VACANT_TRAPS)
+            j["o"] = np.where(vac, room, j.o.to_numpy(float))
         out[f"{PREFIX}sec_vs_{side}"] = (j.s - j.o).to_numpy()
     out[f"{PREFIX}sec_clear"] = out[[f"{PREFIX}sec_vs_in", f"{PREFIX}sec_vs_out"]].min(axis=1)
     g = s.groupby(race)

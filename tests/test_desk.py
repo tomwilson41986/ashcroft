@@ -44,6 +44,7 @@ def test_every_trader_that_can_place_an_order_is_registered_with_the_prefix_its_
                                   "quick_return": by["horse-morning-quick-return"].order_ref_prefix}
     assert f'REF = "{by["greyhound-early-lay"].order_ref_prefix}"' in src("greyhound/early_lay.py")
     assert f'REF = "{by["greyhound-quote-mid"].order_ref_prefix}"' in src("greyhound/quote_mid.py")
+    assert f'REF = "{by["greyhound-take-close"].order_ref_prefix}"' in src("greyhound/take_close.py")
     assert 'ref = f"gh-' in src("greyhound/live.py") and by["greyhound-win-paper"].order_ref_prefix == "gh-"
     assert 'ref=f"fb-' in src("football/live.py") and by["football-match-odds"].order_ref_prefix == "fb-"
 
@@ -288,7 +289,9 @@ def test_the_warden_finds_an_unknown_reference_and_a_day_loss():
     assert kinds == {"unknown-reference", "day-loss", "sport-day-loss"}
     assert fig["settled_total"] == -105.0 and fig["settled_by_sport"] == {"greyhounds": -60.0, "horse_racing": -45.0}
     sport = next(f for f in findings if f.kind == "sport-day-loss")
-    assert "greyhounds" in sport.message and set(sport.stops) == {("capture", "greyhound/STOP")}
+    assert "greyhounds" in sport.message and set(sport.stops) == {("capture", "greyhound/STOP"),
+                                                                  ("capture", "greyhound/take_close/STOP"),
+                                                                  ("capture", "greyhound/sp_lay/STOP")}
 
 
 def test_without_an_envelope_the_warden_checks_the_registry_alone():
@@ -396,3 +399,26 @@ def test_the_warden_needs_nothing_but_its_slim_install():
         src = (ROOT / "desk" / f"{name}.py").read_text()
         assert not re.search(r"^\s*(from|import)\s+(research|model|pandas|numpy|trading)\b", src, re.M), name
         assert not re.search(r"\n\s+(from|import)\s+(research|model)\b", src), name
+
+
+def test_a_lines_n_rules_counts_every_rule_of_its_sport():
+    """A grid of 240 rules is 240 trials: count_rules sums n_rules on the sport's lines and counts one for every
+    other trial line; a line's n_rules must be a whole number with a sport (desk/trials.py)."""
+    from desk import trials
+    lines = [{"kind": "preregistration", "sport": "greyhounds", "n_rules": 240},
+             {"kind": "note", "sport": "greyhounds", "n_rules": 1000},
+             {"kind": "model", "sport": "greyhounds"}, {"kind": "research"},
+             {"kind": "preregistration", "sport": "football", "n_rules": 50}, {"kind": "result", "sport": "greyhounds"}]
+    assert trials.count_rules(lines, "greyhounds") == 240 + 1000 + 1 + 1
+    assert trials.count_rules(lines, "greyhounds") >= trials.count_trials(lines, "greyhounds")
+    ok = '{"when": "2026-11-20T09:30Z", "kind": "note", "tag": "t1", "sport": "greyhounds", "n_rules": 3}'
+    bad = '{"when": "2026-11-20T09:30Z", "kind": "note", "tag": "t2", "n_rules": 3}'
+    assert trials.check(ok, None) == [] and any("n_rules" in e for e in trials.check(bad, None))
+
+
+def test_the_greyhound_trial_count_reads_the_ledger_and_keeps_a_studys_floor(tmp_path):
+    from research.greyhound.trial_count import greyhound_trials
+    led = tmp_path / "ledger.jsonl"
+    led.write_text('{"kind": "note", "sport": "greyhounds", "n_rules": 500}\n{"kind": "model", "sport": "greyhounds"}\n')
+    assert greyhound_trials(ledger=led) == 501 and greyhound_trials(10_000, ledger=led) == 10_000
+    assert greyhound_trials() >= 37_495                       # the real ledger: the count registered on 20 Nov

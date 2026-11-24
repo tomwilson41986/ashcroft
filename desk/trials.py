@@ -8,7 +8,8 @@
   reading written in it) before the result; a desk trial also carries its reading, strategy, sport and the hash of
   the gate it was registered with (desk/registry.py gate_hash).
 - Trials are counted for the deflated Sharpe (research/overfit.py): a sport's count is its own trial lines plus every
-  earlier line with no sport, so more search raises the bar and none is forgotten.
+  earlier line with no sport, so more search raises the bar and none is forgotten. A line may carry ``n_rules``,
+  the rules its test scored (a grid of 240 is 240 trials): ``count_rules`` is the count a deflated Sharpe uses.
 
     python -m desk.trials --check --base origin/<base branch>
     python -m desk.trials --count
@@ -81,6 +82,9 @@ def check(new_text: str, base_text: str | None) -> list[str]:
                 errs.append(f"{where}: a {d['kind']} line needs {k}")
         if d.get("sport") is not None and d["sport"] not in SPORTS:
             errs.append(f"{where}: sport {d['sport']!r} not one of {SPORTS}")
+        k = d.get("n_rules")
+        if k is not None and (isinstance(k, bool) or not isinstance(k, int) or k < 1 or d.get("sport") is None):
+            errs.append(f"{where}: n_rules is a whole number of rules, at least 1, on a line with its sport")
     return errs
 
 
@@ -88,6 +92,21 @@ def count_trials(lines: list[dict], sport: str | None = None) -> int:
     """Trials counted against a sport: its own trial lines and every trial line with no sport (conservative)."""
     return sum(1 for d in lines if str(d.get("kind")) in TRIAL_KINDS
                and (sport is None or d.get("sport") in (None, sport)))
+
+
+def count_rules(lines: list[dict], sport: str) -> int:
+    """Every RULE counted against a sport, for the deflated Sharpe: a line of the sport that carries ``n_rules`` (the
+    rules its test scored: a grid of 240 is 240 trials, not one) counts that many; every other trial line counts one
+    (``count_trials``'s rule: the sport's own and those with no sport). Never less than ``count_trials``."""
+    n = 0
+    for d in lines:
+        own = d.get("sport") == sport
+        k = d.get("n_rules")
+        if own and isinstance(k, int) and not isinstance(k, bool) and k > 0:
+            n += k
+        elif str(d.get("kind")) in TRIAL_KINDS and d.get("sport") in (None, sport):
+            n += 1
+    return n
 
 
 def _git_show(ref: str, path: Path) -> str | None:
@@ -120,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.count or not a.check:
         lines, _ = parse(text)
         for s in SPORTS:
-            print(f"{s:13} {count_trials(lines, s)} trials")
+            print(f"{s:13} {count_trials(lines, s)} trials, {count_rules(lines, s)} rules")
     return rc
 
 

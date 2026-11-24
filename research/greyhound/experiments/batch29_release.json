@@ -1,0 +1,230 @@
+{
+ "about": "Batch 29 (12 Nov 2026), registered before its scores: the release candidate. Batch 28's stack (f_stack, batch 24's stack3_all4 recipe on the fixed engine) with the two tables that passed in batch 28 added: the trials table and the optics table. g_stack_to is the candidate; g_stack_t has the trials table alone (what optics adds inside the stack); g_stack_seed is f_stack's recipe again with every seed moved by 10, the three trees' and the three networks' (params.seed: batch 28's seed arm put the seed where the fit does not read it and returned the baseline exactly), the floor a stack's gain must clear; g_trees_t and g_trees_to are batch 28's tree recipe (fixed 6,000 rounds) with the trials table and with both (does optics add beside the trials); g_seed is batch 28's f0 with params.seed 1, the tree floor batch 28 lacked. Same cache and tables as batch 28, so every arm is read against batch 28's saved predictions on the same runners.",
+ "recipe": "quick",
+ "baseline": "g_stack_seed",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "g_stack_to"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "g_stack_t"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "g_stack_seed",
+   "params": {
+    "seed": 10
+   }
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials"
+   ],
+   "importance": true,
+   "name": "g_trees_t"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics"
+   ],
+   "importance": true,
+   "name": "g_trees_to"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime"
+   ],
+   "importance": true,
+   "name": "g_seed",
+   "params": {
+    "seed": 1
+   }
+  }
+ ]
+}

@@ -1,0 +1,97 @@
+{
+ "about": "Batch 45 (16 Nov 2026), the owner: 'Use the Irish results from GreyhoundAPI in the model'. Registered as greyhound-irish-batch45-1116. Baseline i_live: the live recipe stack_mls (batch 41's w_both). i_irish: + pit_irish (ie_: the dog's Irish form from GreyhoundAPI's Irish results, linked to GBGB's dogs through the API's GB results: runs, win and place rates, time and sectional figures against the Irish tracks' standards, class, days since, an Irish import with little GB form). Test 1 Jun - 11 Nov 2026, read by period.",
+ "recipe": "quick",
+ "test_from": "2026-06-01",
+ "baseline": "i_live",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "i_live"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "i_irish"
+  }
+ ]
+}

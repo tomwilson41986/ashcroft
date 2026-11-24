@@ -269,3 +269,40 @@ def test_the_resting_orders_join_the_queue_and_rest_to_the_real_off():
     sc = sc.set_index("rule")
     assert sc.orders.eq(1).all() and sc.loc["rest_lay_60_m3", "matched_share"] == 1.0
     assert sc.loc["rest_back_60_all", "matched_share"] == 0.0 and pd.isna(sc.loc["rest_back_60_all", "trades"])
+
+
+def test_the_fill_bracket_reads_one_order_under_every_arm():
+    """The 60 s resting lay at 4.0 behind 10: 30 trade AT 4.0 after the scheduled off. Front, shown and strict fill
+    it; the through arms do not (nothing traded beyond the price). A fill within a second of the close cannot be
+    closed at the SP: the gate settles it to the result. The fill-conditional reading splits rows by the fill."""
+    f = pd.DataFrame({"market": ["1.1"], "sid": [1], "secs": [60.0], "off": [pd.Timestamp(OFF)],
+                      "b1": [4.0], "l1": [4.2], "mid": [4.1], "l_mid": np.log([4.1]), "y": np.log([5.0])})
+    f[f"e_{cl.TRADE2_SPEC}"] = f.y - np.log([4.5])
+    t0 = OFF - timedelta(seconds=300)
+    win = lambda status, bsp=None: dict(defn("WIN", status, bsp=bsp), runners=[
+        {"id": 1, "status": "LOSER" if bsp else "ACTIVE", **({"bsp": bsp[1]} if bsp else {})}])
+
+    def stream(fill_at, close_at):
+        return [line(t0, {"id": "1.1", "img": True, "marketDefinition": win("OPEN"), "rc": [
+                    {"id": 1, "atb": [[4.0, 10]], "atl": [[4.2, 8]], "trd": [[4.0, 100]]}]}),
+                line(OFF + timedelta(seconds=fill_at), {"id": "1.1", "rc": [{"id": 1, "trd": [[4.0, 130]]}]}),
+                line(OFF + timedelta(seconds=close_at), {"id": "1.1", "marketDefinition": win("SUSPENDED")}),
+                line(OFF + timedelta(minutes=2), {"id": "1.1", "marketDefinition": win("CLOSED", bsp={1: 5.0, 2: 9.0})})]
+    b = cl.rest_bracket_day(stream(12, 20), f, "2026-11-12", comm=0.0)
+    lay = b[b.rule == "rest_lay_60_m3"].set_index("arm")
+    assert set(lay.index) == set(cl.BRACKET_ARMS)
+    assert (lay.loc[["front", "shown", "strict"], "matched"] > 0).all()
+    assert lay.loc["calibrated", "matched"] == pytest.approx(5.0)       # half of the 30 printed: 15, less the 10 ahead
+    assert (lay.loc[["through", "through_1s"], "matched"] == 0).all()
+    assert lay.loc["shown", "pnl_sp"] == pytest.approx(1 - 4.0 / 5.0, abs=1e-3) and not lay.loc["shown", "late_fill"]
+    assert lay.loc["shown", "pnl_gate"] == pytest.approx(lay.loc["shown", "pnl_sp"])
+    assert lay.loc["shown", "sq_mid"] == pytest.approx(np.log(5.0 / 4.1) ** 2)
+    late = cl.rest_bracket_day(stream(19.5, 20), f, "2026-11-12", comm=0.0)
+    row = late[(late.rule == "rest_lay_60_m3") & (late.arm == "shown")].iloc[0]
+    assert row.late_fill and row.pnl_gate == pytest.approx(1.0, abs=1e-3)       # left to the result: the dog lost
+    sc = cl.bracket_scores(b).set_index(["rule", "arm"])
+    assert sc.loc[("rest_lay_60_m3", "shown"), "matched_share"] == 1.0
+    assert sc.loc[("rest_lay_60_m3", "through"), "matched"] == 0
+    fc = {r["rows"]: r for r in cl.fill_conditional(b, "shown")}
+    assert fc["filled lays"]["n"] == 1 and fc["filled lays"]["log_sp_over_mid"] == pytest.approx(np.log(5 / 4.1), abs=1e-4)
+    assert "unfilled backs" in fc and "filled backs" not in fc

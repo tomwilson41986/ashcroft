@@ -10,6 +10,11 @@ import pytest
 
 from model.form_windows import FORM_WINDOW_FEATURES, MEASURES, WINDOWS, add_form_windows, run_measures
 
+#: a leak moves a feature by its own scale; a pandas release that sums a group in another order moves it in the
+#: last bit (pandas 3.1.1 against 2.2.3: at most 1.8e-15, outputs/horse_v0_20261118/report.md). The tests look for
+#: the first, not the second.
+LEAK_ATOL = 1e-12
+
 
 def _runs(rows):
     base = dict(race_time="2.30", track="york", number_of_runners=11, dist_furlongs=8.0,
@@ -145,7 +150,7 @@ def test_a_days_own_results_move_none_of_its_windows(change):
     new, _ = add_form_windows(alt)
     b = base[base.race_date == day].set_index(KEY)[cols].sort_index()
     n = new[new.race_date == day].set_index(KEY)[cols].sort_index()
-    pd.testing.assert_frame_equal(b, n, check_exact=True)
+    pd.testing.assert_frame_equal(b, n, check_exact=False, rtol=0, atol=LEAK_ATOL)
     # the control: later days read the day's results, so their windows move
     later = (base.race_date > day) & (base.race_date <= day + pd.Timedelta(days=20))
     bl = base[later].set_index(KEY)[cols].sort_index()
@@ -163,7 +168,7 @@ def test_card_rows_get_the_values_the_day_gets_with_results_in():
     live, _ = add_form_windows(card)
     a = full[full.race_date == last].set_index(KEY)[cols].sort_index()
     b = live[live.race_date == last].set_index(KEY)[cols].sort_index()
-    pd.testing.assert_frame_equal(a, b, check_exact=True)
+    pd.testing.assert_frame_equal(a, b, check_exact=False, rtol=0, atol=LEAK_ATOL)
     assert a.notna().mean().min() > 0.5, a.notna().mean().sort_values().head()
 
 

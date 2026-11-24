@@ -204,6 +204,14 @@ class SimOrder:
     last_trd: float = 0.0
     last_through: float = 0.0
     via_through: bool = False    # filled because the market traded beyond the price (the dog moved through it)
+    last_fill: datetime | None = None
+    #: the fill assumed (the fill bracket, 20 Nov 2026): "shown" (the default: behind the money shown at the price,
+    #: a fall in the money shown read as cancellations ahead of us), "front" (first in the queue), "strict"
+    #: (cancellations read as behind us: only trades clear the queue), "through" (filled only by money traded
+    #: beyond the price: what a live order has been seen to get)
+    mode: str = "shown"
+    vol_factor: float | None = None      # this order's own volume factor and cap, where a study varies them by order
+    through_cap: bool | None = None      # (research/greyhound/fill_recon.py calibration); None: the replay's
 
     @property
     def remaining(self) -> float:
@@ -221,6 +229,7 @@ class SimOrder:
         self.value += size * price
         if self.first_fill is None:
             self.first_fill = t
+        self.last_fill = t
 
     def _through(self, r: Runner) -> float:
         return sum(v for p, v in r.trd.items() if (p < self.price - 1e-9 if self.side == "LAY" else p > self.price + 1e-9))
@@ -237,7 +246,8 @@ class SimOrder:
                 self._fill(r.atb[p], p, t)
             same = r.atl.get(self.price, 0.0)
         self.taken = self.matched
-        self.queue_ahead = self.queue_at_place = same
+        self.queue_at_place = same
+        self.queue_ahead = 0.0 if self.mode == "front" else same
         self.last_trd = r.trd.get(self.price, 0.0)
         self.last_through = self._through(r)
 
@@ -247,10 +257,12 @@ class SimOrder:
         orders, whose remainder may exceed what crossed)."""
         if self.done or not self.placed or self.remaining <= 0:
             return
+        vol_factor = self.vol_factor if self.vol_factor is not None else vol_factor
+        through_cap = self.through_cap if self.through_cap is not None else through_cap
         now_trd = r.trd.get(self.price, 0.0)
         d = max(now_trd - self.last_trd, 0.0) * vol_factor
         self.last_trd = now_trd
-        if d > 0:
+        if d > 0 and self.mode != "through":
             clear = min(self.queue_ahead, d)
             self.queue_ahead -= clear
             self._fill(d - clear, self.price, t)
@@ -261,7 +273,8 @@ class SimOrder:
             self._fill(min(self.remaining, crossed) if through_cap else self.remaining, self.price, t)
         self.last_through = through
         shown = (r.atb if self.side == "LAY" else r.atl).get(self.price, 0.0)
-        self.queue_ahead = min(self.queue_ahead, shown)
+        if self.mode != "strict":
+            self.queue_ahead = min(self.queue_ahead, shown)
 
 
 def close_pnl(o: SimOrder, r: Runner | None, sp: float | None, comm: float = 0.0) -> dict:
@@ -300,7 +313,7 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
         by_market.setdefault(o.market, []).append(o)
     rows = []
 
-    def finish(o, m):
+    def finish(o, m, t_end=None):
         o.done = True
         r = m.runners.get(o.sid) if m else None
         rows.append({"tag": o.tag, "market": o.market, "sid": o.sid, "side": o.side, "price": o.price,
@@ -308,7 +321,7 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
                      "taken": round(o.taken, 2), "matched": round(o.matched, 2),
                      "filled_share": round(o.matched / o.size, 4) if o.size else None,
                      "avg": round(o.avg, 3) if o.avg else None, "first_fill": o.first_fill,
-                     "via_through": o.via_through,
+                     "via_through": o.via_through, "mode": o.mode, "last_fill": o.last_fill, "ended": t_end,
                      **close_pnl(o, r, m.bsp(o.sid) if m else None, comm)})
 
     for t, mc in events(lines):
@@ -331,7 +344,7 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
             if o.done:
                 continue
             if (not is_open(m)) if to_close else ((cutoff is not None and t >= cutoff) or m.inplay):
-                finish(o, m)
+                finish(o, m, t)
                 continue
             r = m.runners.get(o.sid)
             if r is None:

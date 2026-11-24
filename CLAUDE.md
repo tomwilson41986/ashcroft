@@ -131,7 +131,7 @@ python betfair_sync.py --live --csv live_odds.csv
 # bet and top-ups to the winnings until then), never at a price under the model's predicted BFSP (min_move 0, the owner,
 # 20 Oct), each order down the three best backs while they clear the bar and the guard (ladder, the owner, 20 Oct),
 # nothing over 200 (max_price, the owner, 20 Oct),
-# at most 5 top-ups a horse (max_topups, the owner, 21 Oct),
+# at most 3 top-ups a horse (max_topups, the owner, 21 Nov; 5 from 21 Oct),
 # each back laid at the SP; from 9 Oct the closing model fitted without
 # volume on every feed (closing_volume), top-ups on and the GBP4,000 day limit back (the owner, 9 Oct). Places real
 # orders only with TRADING_LIVE=yes, and only on the UK runner (live-trade.yml); the S3 object trading/STOP stops new bets
@@ -142,7 +142,8 @@ python auto_trade.py --live --settle
 # the CLEAN steamer model's top 5% and the horses back within 1-4 days, backed WIN only at 10:00 UK (never earlier),
 # half the research's stakes (GBP50 to win, GBP100 a bet at most, GBP2,000 a day a model), the live trader's horses
 # left out; selections from the 06:00 card (GitHub's runner), orders on their own runner (morning-models.yml), real only
-# with MORNING_LIVE=yes; the S3 object morning/STOP (or trading/STOP) stops new orders
+# with MORNING_LIVE=yes; the S3 object morning/STOP (or trading/STOP) stops new orders. The steamer's back is laid at
+# the Betfair SP for its winnings (trade out, the owner, 16 Nov 2026), the quick return's too (morning/live.py EXIT)
 python -m morning.live --select
 MORNING_LIVE=yes python -m morning.live --trade --live
 python -m morning.live --settle --live
@@ -367,6 +368,13 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
   place an order is in `desk/strategies/` with its own order-reference prefix (never `ash` for a new one).
   `desk/risk.py` is the only path from a desk strategy to an order. Nothing in the live horse trader imports `desk`
   (`tests/test_desk.py`). Nothing autonomous places a bet before the lock-down in `docs/agent_desk.md` is done.
+- **Tests read the most informative outcome** (the owner, 18 Nov 2026: "Always use the best metric we have available for a
+  test; e.g. normalised fin pos, normalised beaten lengths. Hard rule to always use the most predictive metric for
+  comparison"): a test of a feature's or rating's predictiveness is scored on race-centred pounds beaten
+  (`model/form_windows.run_measures` `lbsc`) first and the normalised finishing position beside it, never on the win
+  alone; every test says which outcome it read. A change to the price model is judged on its error against the BFSP
+  (the owner, 18 Nov: "Our goal is to get as close as possible to the BFSP"): paired error, Brier skill and concordance
+  not resolved worse; the CLV is reported, not a veto.
 - **A new rule is read against every rule tried** (the owner, 5 and 9 Nov 2026): each test is written in
   `reports/research_ledger.jsonl` before its run with its reading, and a pass needs the deflated Sharpe
   (`research/overfit.py`, at least 0.95 with every trial counted) as well as its interval above zero.

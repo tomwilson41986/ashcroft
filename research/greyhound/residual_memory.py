@@ -55,6 +55,35 @@ def misses(pred: pd.DataFrame) -> pd.DataFrame:
     return p.drop(columns="_d")
 
 
+#: the time-decay memory's half-lives tried, as e-folding days (wave 5, 12 Nov 2026: a miss fades in weeks; a Kalman
+#: filter that reverts to zero and this plain decay scored the same, so the plain one is kept)
+TAUS = (6.0, 9.0, 12.0, 17.0, 24.0, 35.0, 50.0)
+
+
+def decayed(p: pd.DataFrame, tau: float) -> pd.DataFrame:
+    """``p`` (from ``misses``) with ``sum_before`` and ``n_before`` replaced by their time-decayed versions: each
+    earlier day's misses weighted by exp(-age in days / tau). Earlier days only, as before."""
+    d = pd.DataFrame({"dog_id": p.dog_id.to_numpy(), "d": pd.to_datetime(p.race_date).to_numpy(),
+                      "m": p.miss.to_numpy(float)})
+    day = d.groupby(["dog_id", "d"], as_index=False).agg(s=("m", "sum"), n=("m", "count")).sort_values(["dog_id", "d"])
+    dog = day.dog_id.to_numpy()
+    t = day.d.to_numpy().astype("datetime64[D]").astype(np.int64)
+    s, n = day.s.to_numpy(float), day.n.to_numpy(float)
+    sb, nb = np.zeros(len(day)), np.zeros(len(day))
+    cs = cn = 0.0
+    for i in range(len(day)):                                    # one pass in (dog, day) order
+        if i == 0 or dog[i] != dog[i - 1]:
+            cs = cn = 0.0
+        else:
+            f = np.exp(-(t[i] - t[i - 1]) / tau)
+            cs, cn = (cs + s[i - 1]) * f, (cn + n[i - 1]) * f
+        sb[i], nb[i] = cs, cn
+    day["sum_before"], day["n_before"] = sb, nb
+    out = p.drop(columns=["sum_before", "n_before"]).assign(_d=pd.to_datetime(p.race_date).to_numpy())
+    out = out.merge(day[["dog_id", "d", "sum_before", "n_before"]].rename(columns={"d": "_d"}), on=["dog_id", "_d"], how="left")
+    return out.drop(columns="_d")
+
+
 def memory(p: pd.DataFrame, k: float) -> np.ndarray:
     n = p.n_before.to_numpy(float)
     return np.where(n > 0, p.sum_before.to_numpy(float) / (n + k), 0.0)
@@ -130,6 +159,46 @@ def score(p: pd.DataFrame, n_boot: int = 2000, seed: int = 0) -> dict:
             "logloss_z": round((le - lb) / float(dl.std()), 1) if dl.std() > 0 else None}
 
 
+def run_decay(pred: pd.DataFrame, split: str) -> dict:
+    """The time-decay memory against the count-shrunk one on the same runners: tau, K, b and c fitted before
+    ``split``, both layers scored from it, the difference paired by day."""
+    base = misses(pred)
+    first = base[base.race_date.astype(str) < split]
+    prm0 = fit(first)
+    best = None
+    for tau in TAUS:
+        q = decayed(base, tau)
+        prm = fit(q[q.race_date.astype(str) < split])
+        if best is None or prm_mse(q[q.race_date.astype(str) < split], prm) < best[0]:
+            best = (prm_mse(q[q.race_date.astype(str) < split], prm), tau, prm, q)
+    _, tau, prm, q = best
+    late0 = apply(base[base.race_date.astype(str) >= split], prm0)
+    late1 = apply(q[q.race_date.astype(str) >= split], prm)
+    ok = (late0.bsp > 1) & (late0.pred_bsp > 1)
+    a, b = late0[ok], late1[ok.to_numpy()]
+    e0 = (np.log(a.pred_bsp_m) - np.log(a.bsp)) ** 2
+    e1 = (np.log(b.pred_bsp_m.to_numpy()) - np.log(a.bsp)) ** 2
+    day = pd.DataFrame({"d": a.race_date.astype(str), "e0": e0, "e1": e1}).groupby("d").agg(e0=("e0", "sum"), e1=("e1", "sum"), n=("e0", "size"))
+    rng = np.random.default_rng(0)
+    idx = rng.integers(0, len(day), (2000, len(day)))
+    E0, E1, N = (day[c].to_numpy()[idx].sum(1) for c in ("e0", "e1", "n"))
+    dd = np.sqrt(E1 / N) - np.sqrt(E0 / N)
+    r0, r1 = float(np.sqrt(day.e0.sum() / day.n.sum())), float(np.sqrt(day.e1.sum() / day.n.sum()))
+    return {"split": split, "count_shrunk": {"fit": prm0, "scored": score(late0)},
+            "time_decay": {"tau_days": tau, "fit": prm, "scored": score(late1)},
+            "decay_against_count": {"runners": int(day.n.sum()), "days": int(len(day)), "rmse_count": round(r0, 5),
+                                    "rmse_decay": round(r1, 5), "diff": round(r1 - r0, 5),
+                                    "z": round((r1 - r0) / float(dd.std()), 1) if dd.std() > 0 else None}}
+
+
+def prm_mse(p: pd.DataFrame, prm: dict) -> float:
+    race = p.race_id.to_numpy()
+    y = p.miss.to_numpy(float)
+    have = np.isfinite(y)
+    x = _centre(memory(p, prm["k"]), race)
+    return float(((y[have] - prm["b"] * x[have]) ** 2).mean())
+
+
 def run(pred: pd.DataFrame, split: str) -> dict:
     p = misses(pred)
     first = p[p.race_date.astype(str) < split]
@@ -153,8 +222,9 @@ def main(argv=None) -> int:
     ap.add_argument("--pred", required=True)
     ap.add_argument("--split", default="2026-09-01")
     ap.add_argument("--out")
+    ap.add_argument("--decay", action="store_true", help="the time-decay memory against the count-shrunk one")
     a = ap.parse_args(argv)
-    res = run(pd.read_parquet(a.pred), a.split)
+    res = (run_decay if a.decay else run)(pd.read_parquet(a.pred), a.split)
     text = json.dumps(res, indent=1)
     print(text)
     if a.out:

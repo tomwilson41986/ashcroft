@@ -31,12 +31,33 @@ import numpy as np
 import pandas as pd
 
 #: the metrics database's tables the model reads (greyhound/pit), in their build order
-PIT_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend")
+#: from 13 Nov 2026 (the owner: "Add the best performing model to live today"): batch 32's ``m_stack``
+#: (reports/greyhound_model.md section 48; greyhound-fastloop.yml run 43236900145) - the ten tables of batch 18 and
+#: the expected-time, trials, optics, line, salience and last-race tables. RMSE of log(BSP) 0.2885 on 1 Jun - 11 Nov
+#: 2026 against 0.3332 for batch 24's read of the recipe before it.
+PIT_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend",
+              "xtime", "trials", "optics", "line", "salience", "lastrace", "league", "speed", "seq", "irish",
+              "trials2", "ability2", "draw2", "bend2")
+#: from 14 Nov 2026 (the owner: "Release the league table to the live price"): the league table (greyhound/pit/league.py,
+#: Hunter's MM) added. Batch 37 (ledger greyhound-leak-league-batch37-1114, reports/greyhound_model.md section 54): RMSE
+#: of log(BSP) 0.2885 -> 0.2854 on the released stack, z -12.7. The recipe is renamed "stack_ml" with it (its own
+#: out-of-sample prices: greyhound/live.py STACK_OOS_BY_RECIPE)
+#: from 15 Nov 2026 (the owner: "Release"): the speed figures (greyhound/pit/speed.py) and the sequence table
+#: (greyhound/pit/seq.py, its monthly networks cached in the store) added. Batch 41 (ledger
+#: greyhound-speed-seq-batch41-1114, reports/greyhound_model.md section 63): RMSE of log(BSP) 0.2859 -> 0.2797 on the
+#: live recipe, z -19.0. The recipe is renamed "stack_mls"
+#: from 16 Nov 2026 (the owner: "Yes build it"): the dog's Irish form from GreyhoundAPI (greyhound/pit/irish.py, linked
+#: by name). Batch 45 (ledger greyhound-irish-batch45-1116; greyhound-fastloop.yml run 43924460243): RMSE of log(BSP)
+#: 0.2795 -> 0.2780, z -8.0, in Jun-Aug and Sep-Nov. The recipe is renamed "stack_mlsi"
+#: from 18 Nov 2026 (the owner, asked before the run: "Yes"): the feature review's trials on the race scale with the
+#: Kalman levels fed them (greyhound/pit/trials2.py, ability2.py) and the draw and bend rebuilt (draw2.py, bend2.py).
+#: Batch 54 (ledger greyhound-review-combo-batch54-1117; greyhound-fastloop.yml run 44200797892): RMSE of log(BSP)
+#: 0.2781 -> 0.2764 (-0.00167, z -8.0), -0.0017 in Jun-Aug and in Sep-Nov. The recipe is renamed "stack_mlsitd"
 MATRIX_BLOCKS = ("sim", "wpred") + tuple(f"pit_{t}" for t in PIT_TABLES)
 #: batch 14 (run 42818559765): the weigh-in's own columns, a season count GBGB fills after the day, a trainer change
 #: the card cannot see - the one list every card-safe feature set drops (greyhound/live.py)
 from greyhound.live import CARD_UNSAFE_PREFIXES as DROP  # noqa: E402
-RECIPE = {"name": "stack3_all3", "learning_rate": 0.08, "early_stop": 100, "rounds": 10000, "max_bin": 63,
+RECIPE = {"name": "stack_mlsitd", "learning_rate": 0.08, "early_stop": 100, "rounds": 10000, "max_bin": 63,
           "seeds": 3, "nn_seeds": 3, "nn_seconds": 1800.0, "window_months": 29, "max_seconds": None,
           "calibration": "stretch_track"}
 
@@ -98,7 +119,13 @@ def fit(df: pd.DataFrame, feats: list[str], before: str, recipe: dict | None = N
     X_tr, X_es = _matrix(df, feats, tr_i), _matrix(df, feats, es_i)
     dtr = lgb.Dataset(X_tr, won[tr_i], feature_name=feats, free_raw_data=True, params={"max_bin": rc["max_bin"]})
     des = lgb.Dataset(X_es, won[es_i], reference=dtr, free_raw_data=True)
-    fobj, _ = race_soft_objective(race[tr_i], soft[tr_i])
+    # recency row weights (review section 5; the fast loop's ``recency_half_life_days``): absent from RECIPE, so the
+    # live fit is as before unless a recipe names it
+    wts = None
+    if rc.get("recency_half_life_days"):
+        age = (edge - t[tr_i]).astype("timedelta64[s]").astype(float) / 86400.0
+        wts = 0.5 ** (age / float(rc["recency_half_life_days"]))
+    fobj, _ = race_soft_objective(race[tr_i], soft[tr_i], wts)
     _, feval = race_soft_objective(race[es_i], soft[es_i])
     trees = []
     for k in range(int(rc["seeds"])):
@@ -112,7 +139,8 @@ def fit(df: pd.DataFrame, feats: list[str], before: str, recipe: dict | None = N
     nets = []
     for k in range(int(rc["nn_seeds"])):
         nets.append(nn.fit(X_tr, race[tr_i], soft[tr_i], X_es, race[es_i], soft[es_i],
-                           seconds=float(rc["nn_seconds"]) / int(rc["nn_seeds"]), seed=int(params.get("seed", 0)) + k))
+                           seconds=float(rc["nn_seconds"]) / int(rc["nn_seeds"]), seed=int(params.get("seed", 0)) + k,
+                           weight=wts))
         log(f"network seed {k}: {nets[-1]['epochs']} epochs, best {nets[-1]['best']}")
     bundle = {"feats": list(feats), "trees": trees, "nets": nets, "recipe": rc}
     sg, sn, st_es = _trees(bundle, X_es), _nets(bundle, X_es, race[es_i]), _starts(race[es_i])

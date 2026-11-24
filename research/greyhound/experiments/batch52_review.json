@@ -1,0 +1,665 @@
+{
+ "about": "Batch 52 (17 Nov 2026), the owner: 'fix and work on all recommendations' (reports/greyhound_feature_review.md). Registered as greyhound-review-batch52-1117. Baseline c_live: the live recipe stack_mlsi. Each arm adds one rebuilt table (the trainer at the time; trials on the race scale with the Kalman levels fed them; the de-biased market record; the trap-adjusted market rating; leave-one-dog-out breeding; damped form with a within-dog age curve; draw and bend; the arrival-weighted line; past-run price paths; race context; the expected-time table with forgetting and fitted constants), recency weights (365-day half-life) on the live recipe, and every table together. Test 1 Jun - 11 Nov 2026, read by period.",
+ "recipe": "quick",
+ "test_from": "2026-06-01",
+ "baseline": "c_live",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_live"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_trainer2"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_trainer2"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_trials2",
+    "pit_ability2"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_trials2"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_market2"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_market2"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_mrate"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_mrate"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_breeding2"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_breeding2"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_form2"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_form2"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_draw2",
+    "pit_bend2"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_drawbend2"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_line2"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_line2"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_pricepath"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_pricepath"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_racectx"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_racectx"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_xtime2"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_xtime2"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_recency365",
+   "recency_half_life_days": 365
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_trainer2",
+    "pit_trials2",
+    "pit_ability2",
+    "pit_market2",
+    "pit_mrate",
+    "pit_breeding2",
+    "pit_form2",
+    "pit_draw2",
+    "pit_bend2",
+    "pit_line2",
+    "pit_pricepath",
+    "pit_racectx",
+    "pit_xtime2"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_review_all"
+  }
+ ]
+}

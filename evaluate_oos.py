@@ -105,7 +105,8 @@ def drop_in_blocks() -> list[str]:
 def evaluated_folds(dates, min_train_days: int = 365, val_window_days: int = 30,
                     step_days: int = 30, cfg: TrainConfig | None = None,
                     eval_from: str | None = None, eval_until: str | None = None,
-                    fold_anchor: str | None = None, train_from: str | None = None):
+                    fold_anchor: str | None = None, train_from: str | None = None,
+                    partial_last: bool = False):
     """The walk-forward schedule: every fold a run scores, in order.
 
     Yields (k, val_start, val_end, train_mask, val_mask), where k counts the
@@ -119,7 +120,12 @@ def evaluated_folds(dates, min_train_days: int = 365, val_window_days: int = 30,
     matrix built from an earlier start scores exactly the folds a later-starting
     one does; `train_from` keeps a fold's training rows on or after that date
     while the features still see every earlier row. Together they separate what
-    a longer history gives the features from what its rows give the fit."""
+    a longer history gives the features from what its rows give the fit.
+
+    A fold is scheduled only when its whole window fits inside the data, so the newest weeks (under one window) are
+    never scored. `partial_last` (with `eval_until`) adds that last, shorter fold: it starts where the last whole
+    fold ended and scores the rows up to `eval_until`. Off by default: every earlier run's folds are unchanged
+    (the Phase 6 read of 20 Nov 2026 announced the fold 26 Sep - 16 Nov and the schedule left it out)."""
     cfg = cfg or TrainConfig()
     dates = pd.to_datetime(pd.Series(dates).reset_index(drop=True))
     max_date = dates.max()
@@ -128,7 +134,8 @@ def evaluated_folds(dates, min_train_days: int = 365, val_window_days: int = 30,
     since = (dates >= pd.Timestamp(train_from)).to_numpy() if train_from is not None else None
     until = pd.Timestamp(eval_until) if eval_until is not None else None
     k = 0
-    while train_end + timedelta(days=val_window_days) <= max_date:
+    while (train_end + timedelta(days=val_window_days) <= max_date
+           or (partial_last and until is not None and train_end <= max_date and train_end < until)):
         val_start = train_end
         val_end = val_start + timedelta(days=val_window_days)
         train_end += timedelta(days=step_days)
@@ -172,8 +179,14 @@ def walk_forward_predict(
     fold_anchor: str | None = None,
     train_from: str | None = None,
     train_code: str | None = None,
+    release_frame: bool = False,
+    partial_last: bool = False,
 ) -> pd.DataFrame:
     """Train and predict in walk-forward fashion.
+
+    `release_frame` (with `only_fold`): drop this function's name on `df` once the fold's rows are copied out,
+    before the fit. It frees the matrix only where the caller holds no other name on it; the predictions are the
+    same either way (tests/test_parallel_loop.py).
 
     `train_code` ("jumps" or "flat") fits each fold on that code's rows only (hurdles, chases and
     bumpers; or the Flat and all-weather) and still prices every validation row: a specialist model,
@@ -201,6 +214,7 @@ def walk_forward_predict(
     cfg = cfg or TrainConfig()
     fold_fits: list = []
     all_oos = []
+    released = False
 
     if train_code:
         from model.race_shape import race_code as _race_code
@@ -215,7 +229,7 @@ def walk_forward_predict(
 
     for fold_idx, val_start, val_end, tr_mask, va_mask in evaluated_folds(
             df["race_date"], min_train_days, val_window_days, step_days, cfg,
-            eval_from, eval_until, fold_anchor, train_from):
+            eval_from, eval_until, fold_anchor, train_from, partial_last):
         if only_fold is not None and fold_idx != only_fold:
             continue
         if train_code:
@@ -237,7 +251,15 @@ def walk_forward_predict(
         # (iteration 82's first run). The rows and their order are unchanged.
         fit_cols = list(dict.fromkeys(list(feature_cols) + [
             c for c in ("race_date", "race_time", "track", "raceid", "bfsp") if c in df.columns]))
-        fit = fit_bfsp(df.loc[tr_mask, fit_cols], feature_cols, cfg)
+        rows = [df.loc[tr_mask, fit_cols]]
+        if release_frame and only_fold is not None:
+            # One fold is fitted and its rows are copied out (val_df, rows): the matrix itself is not read again.
+            # Where the caller handed over its only name on it (main, a loop job), dropping it here frees 5 GB before
+            # the fit builds its own copies; with it held, a long fit still went 4.7 GB into swap (run 44715810929).
+            del df
+            feature_cache.release_memory()
+            released = True
+        fit = fit_bfsp(rows.pop(), feature_cols, cfg)
         model = fit.booster
         if not fold_fits:
             log.info(
@@ -264,6 +286,8 @@ def walk_forward_predict(
         val_df["fold_idx"] = fold_idx
 
         all_oos.append(val_df)
+        if released:
+            break
 
     if not all_oos:
         log.error("No walk-forward folds produced. Need more data.")
@@ -288,6 +312,74 @@ def walk_forward_predict(
 
     log.info(f"\nTotal OOS predictions: {len(combined):,} across {len(all_oos)} folds")
     return combined
+
+
+# ---------------------------------------------------------------------------
+# The figure member (the owner's model brief, Phase 3, 19 Nov 2026)
+# ---------------------------------------------------------------------------
+
+#: the figure model's settings: those of the Phase 3 screen that passed (ledger phase3-nbl-target-1119)
+FIGURE_PARAMS = {"objective": "regression", "learning_rate": 0.05, "num_leaves": 63, "min_child_samples": 500,
+                 "feature_fraction": 0.5, "bagging_fraction": 0.8, "bagging_freq": 5, "lambda_l2": 1.0, "seed": 42,
+                 "deterministic": True, "force_col_wise": True, "verbose": -1}
+FIGURE_ROUNDS = 800
+
+
+def figure_label(df: pd.DataFrame) -> np.ndarray:
+    """Each run's normalised beaten-lengths figure (model/blocks/nbl_rating.py): race-centred pounds beaten over the
+    field-size spread s(n), plus GAMMA x class (log prize less the code's median), GAMMA the block's own choice on the
+    races before its FIT_UNTIL. Post-race: a label, never a feature. NaN for a run with no margin (a non-finisher)."""
+    from model.blocks import nbl_rating as nb
+    # The label is read from the results' own columns, so it is built before the frame is cut down to the model's
+    # inputs. Iteration 131's first run built it after: with the margins and the prize gone every finisher's figure
+    # was missing, every winner's was 0, the member learned 0 and predicted 0.0 for every runner (20 Nov 2026).
+    lacking = [c for c in ("placing_numerical", "prize_money", "dist_furlongs") if c not in df.columns]
+    if "LB" not in df.columns and "total_dst_bt" not in df.columns:
+        lacking.append("LB or total_dst_bt")
+    if lacking:
+        raise ValueError(f"the figure label reads the results' columns and the frame lacks {lacking}: "
+                         "build it before the frame is cut to the model's inputs")
+    reads = [c for c in nb.READS if c in df.columns]
+    gamma = nb.build(df[reads].copy()).attrs.get("nb_gamma", nb.GAMMA_DEFAULT)
+    p = nb.run_parts(df)
+    s = nb._s_of(p["n"], nb.spread_by_field(p["rel"], p["n"], p["race"], p["early"]))
+    med = {}
+    for j in (False, True):
+        sel = p["early"] & (p["jumps"] == j)
+        med[j] = np.nanmedian(p["prize"][sel]) if sel.any() else np.nanmedian(p["prize"])
+    cls = np.nan_to_num(p["prize"] - np.where(p["jumps"], med[True], med[False]), nan=0.0)
+    label = p["rel"] / s + gamma * cls
+    have = np.isfinite(label)
+    beaten = have & (p["rel"] != 0)
+    log.info("figure label: GAMMA %s; %d of %d runs with a figure, %d of them not a race's level, sd %.3f",
+             gamma, int(have.sum()), len(label), int(beaten.sum()), float(np.nanstd(label)) if have.any() else 0.0)
+    if have.mean() < 0.5 or beaten.sum() < 0.5 * have.sum() or not np.nanstd(label) > 0:
+        raise ValueError("the figure label is degenerate (too few runs with a margin): nothing to learn")
+    return label
+
+
+def figure_walk_forward(df: pd.DataFrame, feature_cols: list[str], label: np.ndarray, schedule: dict,
+                        only_fold: int | None = None) -> pd.DataFrame:
+    """The figure member: for each fold of the schedule (the same folds, purge and training window as a price arm),
+    LightGBM regression on the figure of the training rows that have one, every validation row priced
+    (predicted_figure). No price: a blend ensemble (scripts/research_loop.py) mixes it into a price arm's."""
+    out = []
+    for fold_idx, val_start, val_end, tr_mask, va_mask in evaluated_folds(df["race_date"], **schedule):
+        if only_fold is not None and fold_idx != only_fold:
+            continue
+        tr = tr_mask & np.isfinite(label)
+        log.info("  figure fold %d: train %d runs with a figure (< %s), predict %d rows (%s to %s)",
+                 fold_idx, int(tr.sum()), val_start.date(), int(va_mask.sum()), val_start.date(), val_end.date())
+        X = df.loc[tr, feature_cols].to_numpy(dtype=np.float32)
+        model = lgb.train(FIGURE_PARAMS, lgb.Dataset(X, label[tr], free_raw_data=True), FIGURE_ROUNDS)
+        del X
+        val = df.loc[va_mask].copy()
+        val["predicted_figure"] = model.predict(val[feature_cols].to_numpy(dtype=np.float32))
+        if not val["predicted_figure"].std() > 0:
+            raise ValueError(f"figure fold {fold_idx}: every prediction is {val['predicted_figure'].iloc[0]!r}")
+        val["fold_idx"] = fold_idx
+        out.append(val)
+    return pd.concat(out, ignore_index=True) if out else pd.DataFrame()
 
 
 # ---------------------------------------------------------------------------
@@ -772,6 +864,39 @@ def _cpu_model() -> str | None:
     return None
 
 
+#: the columns the prediction file carries beside the features (main() keeps these and the features, nothing else)
+CARRY = ("race_date", "race_time", "track", "horse_name", "raceid", "bfsp", "log_bfsp", "placing_numerical", "won",
+         "race_type", "race_code", "surface_type", "going_description", "dist_furlongs", "number_of_runners",
+         "race_class")
+
+
+def float32_plan(args) -> tuple[tuple, set | None]:
+    """With --float32: (the engine features to read in single precision straight from the cache, the columns the
+    requested blocks read) - or ((), None), which keeps every column in double precision until the cast, as before.
+
+    Every model input is cast to float32 before the fit either way, and the cast gives the same value whenever it is
+    made. What must stay double until then is whatever a block computes from: each drop-in block's READS (and those
+    of the blocks it reads). So an engine feature no requested block reads is read as float32 from the start, and a
+    block's feature no later block reads is stored as float32 as it is built (blocks.attach single_unless). Left in
+    double: the columns the prediction file carries and any feature the run drops (neither is cast today), and
+    everything when a requested block is not a drop-in block that declares READS (its reads are not known)."""
+    from model import blocks as drop_in
+    requested = [b.strip() for b in (args.blocks or "").split(",") if b.strip()]
+    if any(b not in drop_in.names() for b in requested):
+        return (), None
+    reads = drop_in.reads_of(requested)
+    if reads is None:
+        return (), None
+    if args.drop_feature_list or args.withhold:
+        return (), reads                      # names dropped by file or by block: left to the cast, as before
+    prefixes = tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip())
+    keep = reads | set(CARRY)
+    if getattr(args, "figure_target", False):
+        from model.blocks import nbl_rating as nb
+        keep |= set(nb.READS)                 # the figure label is built from these, in double precision
+    return tuple(c for c in ALL_FEATURE_COLS if c not in keep and not (prefixes and c.startswith(prefixes))), reads
+
+
 def main():
     import time
     started = time.time()
@@ -932,6 +1057,11 @@ def main():
              "matrix from an earlier --start-date scores the same folds as a later one",
     )
     parser.add_argument(
+        "--figure-target", action="store_true",
+        help="Fit the normalised beaten-lengths figure (model/blocks/nbl_rating.py) instead of the price: a figure "
+             "member for the research loop's blend ensemble; writes predicted_figure, no price",
+    )
+    parser.add_argument(
         "--train-code", default=None, choices=["jumps", "flat"],
         help="Fit each fold on this code's rows only (jumps: hurdles, chases, bumpers; flat: turf and "
              "all-weather); every validation row is still priced",
@@ -945,6 +1075,11 @@ def main():
         "--eval-until", default=None, metavar="DATE",
         help="Score only validation windows before DATE (exclusive). With "
              "--eval-from, a development window that never reads the holdout",
+    )
+    parser.add_argument(
+        "--partial-last-fold", action="store_true",
+        help="With --eval-until: also score the last fold whose window runs past the data (the newest weeks), "
+             "up to --eval-until. Off by default, so every earlier run's folds stand",
     )
     parser.add_argument(
         "--blocks", default="",
@@ -999,7 +1134,7 @@ def main():
     schedule = dict(min_train_days=args.min_train_days, val_window_days=args.val_window,
                     step_days=args.step_days, cfg=cfg, eval_from=args.eval_from,
                     eval_until=args.eval_until, fold_anchor=args.fold_anchor,
-                    train_from=args.train_from)
+                    train_from=args.train_from, partial_last=args.partial_last_fold)
 
     if args.list_folds:
         # Only the dates are needed, and a cached matrix gives them without the
@@ -1025,10 +1160,13 @@ def main():
     # feature code is unchanged, so an experiment that only alters the model
     # should not pay for it. See model/feature_cache.py for how staleness is
     # prevented.
+    early32, block_reads = float32_plan(args) if args.float32 else ((), None)
     df, cache_info = feature_cache.build_or_load(
         lambda: build_feature_frame(args.db, args.start_date), args.db, start_date=args.start_date,
-        cache_dir=args.feature_cache, refresh=args.refresh_cache,
+        cache_dir=args.feature_cache, refresh=args.refresh_cache, float32=early32,
     )
+    if early32 and cache_info.get("cached"):
+        log.info("float32: %d engine features no block reads were read in single precision", len(early32))
     if cache_info.get("cached"):
         log.info("  reused a cached feature matrix built at %s", cache_info.get("built_at", "?"))
 
@@ -1089,7 +1227,7 @@ def main():
             from model import blocks as drop_in
             import time as _t
             t0 = _t.time()
-            df, cols = drop_in.attach(df, [block])
+            df, cols = drop_in.attach(df, [block], single_unless=block_reads)
             log.info("block %s built on the cached matrix in %.0fs", block, _t.time() - t0)
         else:
             raise SystemExit(f"unknown block {block!r} ({', '.join(RESEARCH_BLOCKS)}, intent_unsafe, ae, "
@@ -1104,13 +1242,17 @@ def main():
     )
     missing_features = [c for c in wanted if c not in df.columns]
 
+    # the figure member's label, from the results' own columns, before they are cast or cut away
+    figure = figure_label(df) if args.figure_target else None
+
     if args.float32:
         # The model's float64 inputs to single precision now, before the folds copy
         # them: the matrix itself halves too.
         cast = [c for c in feature_cols_full if df[c].dtype == np.float64]
         df = df.astype({c: np.float32 for c in cast}, copy=False)
-        gc.collect()
-        log.info("float32: %d of %d model inputs stored in single precision", len(cast), len(feature_cols_full))
+        feature_cache.release_memory()
+        log.info("float32: %d of %d model inputs cast to single precision now (the others were held so already)",
+                 len(cast), len(feature_cols_full))
 
     if prefixes or names:
         dropped = [c for c in wanted if c in df.columns and c not in set(feature_cols_full)]
@@ -1153,13 +1295,39 @@ def main():
     # price and result, and the race metadata the prediction file carries. Every
     # other column of the matrix is carried into each fold's copies for nothing
     # (a history from 2018 did not fit in a runner's memory with them).
-    carry = ["race_date", "race_time", "track", "horse_name", "raceid", "bfsp", "log_bfsp",
-             "placing_numerical", "won", "race_type", "race_code", "surface_type", "going_description",
-             "dist_furlongs", "number_of_runners", "race_class"]
+    carry = list(CARRY)
     df = df[list(dict.fromkeys(list(feature_cols_full) + [c for c in carry if c in df.columns]))]
-    gc.collect()
+    feature_cache.release_memory()
 
-    oos = walk_forward_predict(df, feature_cols_full, cfg=cfg, only_fold=args.fold, train_code=args.train_code,
+    if args.figure_target:
+        oos = figure_walk_forward(df, feature_cols_full, figure, schedule, only_fold=args.fold)
+        if oos.empty:
+            log.error("No out-of-sample predictions generated.")
+            sys.exit(1)
+        tag = args.tag
+        if args.output_csv:
+            stem, dot, ext = args.output_csv.rpartition(".")
+            path = f"{stem}_{tag}{dot}{ext}" if (tag and dot) else args.output_csv
+            cols = [c for c in ("race_date", "race_time", "track", "horse_name", "predicted_figure", "bfsp",
+                                "placing_numerical", "fold_idx", "race_type", "race_code", "surface_type",
+                                "number_of_runners") if c in oos.columns]
+            oos[cols].to_csv(path, index=False)
+            log.info("Saved the figure member's predictions to %s", path)
+        if args.output_json:
+            stem, dot, ext = args.output_json.rpartition(".")
+            path = f"{stem}_{tag}{dot}{ext}" if (tag and dot) else args.output_json
+            with open(path, "w") as f:
+                json.dump({"kind": "figure", "n_predictions": len(oos), "n_folds": int(oos["fold_idx"].nunique()),
+                           "n_features_used": len(feature_cols_full), "fold": args.fold, "tag": tag,
+                           "figure_params": FIGURE_PARAMS, "figure_rounds": FIGURE_ROUNDS,
+                           "elapsed_seconds": round(time.time() - started, 1), "cpu": _cpu_model(), "cpu_count": os.cpu_count(),
+                           "missing_features": missing_features}, f, indent=2, default=str)
+        return
+
+    frames = [df]
+    del df                      # one name on the matrix, handed over: a one-fold run frees it before its fit
+    oos = walk_forward_predict(frames.pop(), feature_cols_full, cfg=cfg, only_fold=args.fold,
+                               train_code=args.train_code, release_frame=args.fold is not None,
                                **{k: v for k, v in schedule.items() if k != "cfg"})
 
     if oos.empty:
@@ -1248,7 +1416,7 @@ def main():
             "history": {"start_date": args.start_date, "fold_anchor": args.fold_anchor,
                         "train_from": args.train_from},
             "elapsed_seconds": round(time.time() - started, 1),
-            "cpu": _cpu_model(),
+            "cpu": _cpu_model(), "cpu_count": os.cpu_count(),
             "fold_fits": oos.attrs.get("fold_fits", []),
             "folds_early_stopped": sum(
                 1 for f in oos.attrs.get("fold_fits", []) if f["early_stopped"]

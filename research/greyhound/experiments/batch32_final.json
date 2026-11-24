@@ -1,0 +1,96 @@
+{
+ "about": "Batch 32 (12 Nov 2026), registered before its scores: the final candidate of the day. m_stack is batch 29's g_stack_to (the stack with the trials and optics tables) plus the three discovery tables that passed alone in batches 30 and 31: line, salience, last race. m_stack_wide adds the six that did not pass alone (readers, followed, cells, improve, debut, pedigree), whose sets passed together (h_all5, k_all4). Same cache and tables as batches 28 to 31; read against batch 29's g_stack_to on the same runners.",
+ "recipe": "quick",
+ "baseline": "m_stack",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "m_stack"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_readers",
+    "pit_followed",
+    "pit_cells",
+    "pit_improve",
+    "pit_debut",
+    "pit_pedigree"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "m_stack_wide"
+  }
+ ]
+}

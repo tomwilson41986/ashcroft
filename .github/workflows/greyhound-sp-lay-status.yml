@@ -1,0 +1,81 @@
+name: Greyhound lay at the SP, status (read-only)
+
+# The residual's lay at the SP as the day stands (greyhound/sp_lay.py; the owner, 21 Nov 2026): its status.json, the
+# switches, a summary of its ledger, and the forward test's served picks for the day, from S3, read-only. Nothing
+# here holds a Betfair key; nothing is sent.
+
+on:
+  workflow_dispatch:
+    inputs:
+      day:
+        description: 'the UK day (YYYY-MM-DD); empty for today'
+        required: false
+        default: ''
+      mode:
+        description: 'live or paper'
+        required: false
+        type: choice
+        options: ['live', 'paper']
+        default: 'live'
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          DAY: ${{ inputs.day }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          D="${DAY:-$(TZ=Europe/London date +%F)}"
+          P="s3://$BUCKET/sources/greyhound/sp_lay/$MODE/$D"
+          echo "== $P/status.json"; aws s3 cp "$P/status.json" - || echo "no status"
+          echo; echo "== switches"
+          for k in greyhound/STOP greyhound/sp_lay/STOP trading/STOP; do
+            aws s3 ls "s3://$BUCKET/$k" > /dev/null 2>&1 && echo "ON:  $k" || echo "off: $k"
+          done
+          echo; echo "== the forward test's served picks for $D"
+          aws s3 cp "s3://$BUCKET/sources/greyhound/sp_offset/served/$D.csv" served.csv > /dev/null 2>&1 || echo "no served file yet"
+          aws s3 cp "s3://$BUCKET/sources/greyhound/sp_offset/meta.json" meta.json > /dev/null 2>&1 || echo "no frozen model"
+          aws s3 cp "$P/ledger.csv" ledger.csv > /dev/null 2>&1 || echo "no ledger yet"
+          python3 - <<'PY'
+          import csv, collections, json, os
+          if os.path.exists("served.csv") and os.path.exists("meta.json"):
+              cut = json.load(open("meta.json"))["cuts"]["lay_bottom10"]
+              rows = list(csv.DictReader(open("served.csv")))
+              picks = [r for r in rows if r.get("s") and float(r["s"]) <= cut]
+              print(f"served runners {len(rows)}, races {len({r['race_id'] for r in rows})}, "
+                    f"lay picks {len(picks)} (cut {cut:.4f})")
+          if not os.path.exists("ledger.csv"):
+              raise SystemExit(0)
+          rows = list(csv.DictReader(open("ledger.csv")))
+          if os.path.exists("served.csv") and os.path.exists("meta.json"):
+              # every pick the trader never decided (no lay, no skip in its WIN market), with its off: a gap to explain
+              decided = {(r["market_id"], str(int(float(r["selection_id"])))) for r in rows
+                         if (r.get("kind") or "win") == "win" and r["action"] in ("lay", "paper_lay", "skip")}
+              missed = [r for r in picks if (r["market_id"], str(int(float(r["selection_id"])))) not in decided]
+              print(f"picks never decided: {len(missed)}")
+              for r in missed:
+                  print(f"  {r['off_utc']} {r['track']} {r['race_time']} trap {r['trap']} {r['dog_name']} s {r['s']}")
+          print("\n== ledger rows by action:", dict(collections.Counter(r["action"] for r in rows)))
+          print("skip reasons:", dict(collections.Counter(r["note"] for r in rows if r["action"] == "skip")))
+          lays = [r for r in rows if r["action"] in ("lay", "paper_lay")]
+          print("lay statuses:", dict(collections.Counter(r["status"] for r in lays)))
+          print("lays by market:", dict(collections.Counter(r.get("kind") or "win" for r in lays)))
+          liab = sum(float(r["liability"] or 0) for r in lays if r["status"] in ("PENDING", "UNKNOWN", "PAPER"))
+          print(f"lays sent {len(lays)}, liability GBP{liab:.2f}")
+          for r in lays[-15:]:
+              print(f"  {r['time_utc']} {r.get('kind') or 'win'} {r['track']} {r['race_time']} trap {r['trap']} {r['dog']}: {r['status']} "
+                    f"{r['bet_id']} s {r['s']} {r['error']}")
+          for r in rows:
+              if r["action"] in ("hold", "cancel") or (r["action"] == "lay" and r["status"] == "FAILURE"):
+                  print("  ATTENTION", r["action"], r["market_id"], r["selection_id"], r["status"], r["error"], r["note"])
+          PY

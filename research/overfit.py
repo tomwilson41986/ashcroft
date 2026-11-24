@@ -156,3 +156,41 @@ def _round(x, nd: int = 6):
     except (TypeError, ValueError):
         return None
     return round(x, nd) if np.isfinite(x) else None
+
+
+def pbo_cscv(returns, n_splits: int = 16) -> dict:
+    """The probability of backtest overfitting by combinatorially symmetric cross-validation (Bailey, Borwein,
+    Lopez de Prado and Zhu 2017), the owner's model brief of 18 Nov 2026 (Phase 1).
+
+    ``returns`` is a periods x trials matrix: each column one rule or model tried, each row one period (a race day),
+    the same periods for every trial. The rows are cut into ``n_splits`` contiguous blocks; for every way of taking
+    half the blocks as in-sample, the trial with the best in-sample Sharpe is found and its rank among all trials on
+    the other half read. The PBO is the share of those splits where the in-sample best lands at or below the
+    out-of-sample median (logit of its relative rank <= 0). Near 0.5: picking the best tells nothing; near 0: the
+    best in sample stays good out of sample.
+
+    Returns {"pbo", "splits", "logits"}; with fewer than 2 trials or too few rows a block, {"pbo": None, ...}.
+    """
+    from itertools import combinations
+
+    x = np.asarray(returns, dtype=float)
+    if x.ndim != 2 or x.shape[1] < 2 or n_splits < 2 or n_splits % 2 or x.shape[0] < 2 * n_splits:
+        return {"pbo": None, "splits": 0, "logits": []}
+    blocks = np.array_split(np.arange(x.shape[0]), n_splits)
+
+    def sharpe(m):
+        sd = m.std(axis=0, ddof=1)
+        return np.where(sd > 0, m.mean(axis=0) / np.where(sd > 0, sd, 1.0), 0.0)
+
+    n = x.shape[1]
+    logits = []
+    for ins in combinations(range(n_splits), n_splits // 2):
+        ins_rows = np.concatenate([blocks[i] for i in ins])
+        oos_rows = np.concatenate([blocks[i] for i in range(n_splits) if i not in ins])
+        best = int(np.argmax(sharpe(x[ins_rows])))
+        oos = sharpe(x[oos_rows])
+        rank = (oos < oos[best]).sum() + 0.5 * ((oos == oos[best]).sum() - 1) + 1     # 1..n, ties shared
+        w = rank / (n + 1.0)
+        logits.append(float(np.log(w / (1.0 - w))))
+    logits = np.array(logits)
+    return {"pbo": float((logits <= 0).mean()), "splits": len(logits), "logits": logits.tolist()}

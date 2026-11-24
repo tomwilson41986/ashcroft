@@ -58,3 +58,27 @@ def test_a_runner_reads_earlier_days_only():
     g = out.groupby("race_id")
     assert np.allclose(g.p_model_m.sum(), 1.0) and np.allclose(np.log(out.pred_bsp_m).groupby(out.race_id).mean(),
                                                                np.log(out.pred_bsp).groupby(out.race_id).mean())
+
+
+def test_the_decayed_memory_reads_earlier_days_only_and_fades():
+    import numpy as np
+    import pandas as pd
+
+    from research.greyhound import residual_memory as rm
+    rows = []
+    for k, day in enumerate(["2026-06-01", "2026-06-11", "2026-06-12"]):
+        for dog, bsp in ((1, 4.0), (2, 2.0)):
+            rows.append({"race_id": k, "race_date": day, "dog_id": dog, "won": float(dog == 2), "p_model": 0.5,
+                         "bsp": bsp, "pred_bsp": 2.0 if dog == 2 else 2.0})
+    p = rm.misses(pd.DataFrame(rows))
+    q = rm.decayed(p, 10.0)
+    d1 = q[q.dog_id == 1].sort_values("race_date")
+    m = float(p[p.dog_id == 1].miss.iloc[0])
+    assert d1.n_before.iloc[0] == 0 and d1.sum_before.iloc[0] == 0
+    assert np.isclose(d1.n_before.iloc[1], np.exp(-1.0)) and np.isclose(d1.sum_before.iloc[1], m * np.exp(-1.0))
+    assert np.isclose(d1.n_before.iloc[2], (np.exp(-1.0) + 1) * np.exp(-0.1))
+    # a later day's result rewritten: the earlier days' memories do not move
+    r2 = pd.DataFrame(rows)
+    r2.loc[r2.race_date == "2026-06-12", "bsp"] = [9.0, 1.5]
+    q2 = rm.decayed(rm.misses(r2), 10.0)
+    assert np.allclose(q2.sort_values(["race_id", "dog_id"]).sum_before, q.sort_values(["race_id", "dog_id"]).sum_before)

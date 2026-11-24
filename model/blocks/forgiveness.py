@@ -6,8 +6,9 @@ health). Its next price shows which runs it believed (reports/discovery_1111.md 
 is the market's update after the run before the last one. Here that update is set against the update a result of
 that kind usually earns:
 
-    s_j     the run's result surprise: its normalised finishing position (a non-finisher 0) less the position its
-            rank in the Betfair SP book implied
+    s_j     the run's result surprise: its normalised finishing position (a non-finisher 0) less the mean position
+            of earlier runners at its price (model/blocks/_resid.py; the first version's rank-implied position
+            leaned with the price, iteration 118)
     a_j     the market's update after run j less BETA x s_j: above zero, the market forgave (or liked) the run more
             than its result said; below, it held the run against the horse more
 
@@ -32,6 +33,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from model.blocks._resid import price_residual
 from model.freshness_features import _Days, _col
 from model.race_shape import _codes, day_index, race_code, race_key
 
@@ -61,18 +63,8 @@ def build(df: pd.DataFrame) -> pd.DataFrame:
     bad = name.isin(["", "nan", "none"]).to_numpy()
     H = _Days(np.where(bad, -1, _codes(name)), day)
 
-    pos = pd.to_numeric(_col(df, "placing_numerical"), errors="coerce").to_numpy(float)
-    n = pd.to_numeric(_col(df, "number_of_runners"), errors="coerce").to_numpy(float)
-    bsp = pd.to_numeric(_col(df, "bfsp"), errors="coerce").to_numpy(float)
-    priced = np.isfinite(bsp) & (bsp > 1.0)
-    race = pd.Series(pd.factorize(race_key(df), sort=True)[0])
-    rk = pd.Series(np.where(priced, bsp, np.nan)).groupby(race).rank(method="average").to_numpy()
-    npr = pd.Series(priced.astype(float)).groupby(race).transform("sum").to_numpy()
-    fin = np.isfinite(pos) & (pos >= 1)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        nfp = np.where(fin & (n > 1), np.clip((n - pos) / (n - 1), 0.0, 1.0), np.where(n > 1, 0.0, np.nan))
-        implied = np.where(priced & (npr > 1), (npr - rk) / (npr - 1), np.nan)
-    s_row = nfp - implied
+    race = pd.Series(pd.factorize(race_key(df), sort=True)[0], index=df.index)
+    s_row, nfp = price_residual(df, day, race)
 
     s = H.per_block(s_row)
     f = H.per_block(nfp)

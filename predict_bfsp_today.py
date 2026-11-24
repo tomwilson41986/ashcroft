@@ -322,8 +322,29 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
 # Race Card Fetching
 # ---------------------------------------------------------------------------
 
+def betfair_card_fallback(target_date: date, why: str) -> pd.DataFrame:
+    """The card from Betfair's recorded catalogue (card_betfair.py) when horseracebase.com gives none (the owner,
+    18 Nov 2026). Off unless CARD_FALLBACK=on (or CARD_SOURCE=betfair, the check run): its first price check
+    (card-fallback-check.yml run 44277514843, 18 Nov) put its prices a median 0.49 in logs from the HRB card's,
+    rank correlation 0.78, so it is not fit to trade on until a check passes."""
+    if os.getenv("CARD_SOURCE", "").lower() != "betfair" and os.getenv("CARD_FALLBACK", "").lower() != "on":
+        log.error(f"No card from horseracebase.com ({why}); the Betfair card fallback is off (CARD_FALLBACK=on "
+                  "turns it on): no card")
+        return pd.DataFrame()
+    log.warning(f"No card from horseracebase.com ({why}): falling back to Betfair's recorded catalogue")
+    try:
+        from card_betfair import fetch_card
+        return fetch_card(target_date, db_path=DB_PATH)
+    except Exception as e:  # noqa: BLE001 - the fallback must never be the thing that breaks the run
+        log.error(f"Betfair card fallback failed: {e}")
+        return pd.DataFrame()
+
+
 def fetch_racecard_from_hrb(target_date: date) -> pd.DataFrame:
-    """Fetch today's race card from horseracebase.com."""
+    """Fetch today's race card from horseracebase.com; Betfair's recorded catalogue when it gives none.
+    CARD_SOURCE=betfair reads Betfair's card without asking horseracebase.com (the fallback's check run)."""
+    if os.getenv("CARD_SOURCE", "").lower() == "betfair":
+        return betfair_card_fallback(target_date, "CARD_SOURCE=betfair")
     try:
         from daily_predictions import (
             create_session,
@@ -332,16 +353,18 @@ def fetch_racecard_from_hrb(target_date: date) -> pd.DataFrame:
         )
     except ImportError:
         log.error("Could not import daily_predictions module")
-        return pd.DataFrame()
+        return betfair_card_fallback(target_date, "daily_predictions not importable")
 
     session = create_session()
     user_id = login(session)
     if not user_id:
         log.error("Failed to login to horseracebase.com")
         log.error("Set HRB_USERNAME and HRB_PASSWORD in .env file")
-        return pd.DataFrame()
+        return betfair_card_fallback(target_date, "login failed")
 
     runners = get_todays_runners(session, user_id, target_date)
+    if runners is None or len(runners) == 0:
+        return betfair_card_fallback(target_date, "no runners")
     return runners
 
 
@@ -412,6 +435,10 @@ def prepare_and_predict(
     # features either way for the one that does. A drop-in block the model reads
     # (model/blocks) switches on the engine blocks it is computed from.
     from model import blocks as drop_in
+    try:                                     # the results' lag behind the card, logged (review item C3); never fatal
+        results_freshness(historical_df["race_date"], target_date, target_runners)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"results freshness not read: {e}")
     served_blocks = drop_in.used_by(feature_cols)
     engine = CustomMetricsEngine(**{**blocks_needed(feature_cols), **drop_in.engine_flags(served_blocks)})
 
@@ -812,6 +839,38 @@ def format_predictions(predictions: pd.DataFrame, target_date: date) -> str:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+#: results more than this many days behind the card are flagged (a day's results load overnight; 2 covers a late load)
+FRESHNESS_DAYS = 2
+
+
+def results_freshness(history_dates, target_date, card=None, max_days: int = FRESHNESS_DAYS) -> dict:
+    """How far the results behind the card's features lag the card (the owner's review of 20 Nov 2026, item C3).
+
+    Every form feature reads the results table; when it stops (horseracebase.com paused downloads from 17 Nov 2026)
+    the card is priced as if no horse had run since. The price is made either way; this says so in the log, once, at
+    WARNING, with the runners whose last run (the card's days since its last run, where it carries one) falls in the
+    gap, so the gap is seen on the day and not a week later. Nothing is changed."""
+    last = pd.to_datetime(pd.Series(history_dates), errors="coerce").max()
+    target = pd.Timestamp(target_date)
+    out = {"last_result_day": None if pd.isna(last) else str(last.date()), "target": str(target.date()),
+           "gap_days": None, "runners_in_gap": None, "runners": None if card is None else int(len(card))}
+    if pd.isna(last):
+        log.warning("RESULTS FRESHNESS: no results in the history")
+        return out
+    gap = int((target - last.normalize()).days)
+    out["gap_days"] = gap
+    col = next((c for c in ("days_since_lr", "days_since_last_run", "dslr") if card is not None and c in card.columns),
+               None)
+    if col is not None:
+        dslr = pd.to_numeric(card[col], errors="coerce")
+        out["runners_in_gap"] = int((dslr < gap).sum())
+    msg = (f"RESULTS FRESHNESS: results end {out['last_result_day']}, the card is {out['target']}: {gap} days"
+           + ("" if out["runners_in_gap"] is None else
+              f"; {out['runners_in_gap']} of {out['runners']} runners have run since (their latest run is in no feature)"))
+    (log.warning if gap > max_days else log.info)(msg)
+    return out
+
 
 def main():
     parser = argparse.ArgumentParser(

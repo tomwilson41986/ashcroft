@@ -1,0 +1,153 @@
+research-iter130-members-new-blocks-169 oos_gate_st.csv: 139,877 runners in 15,668 races with a morning WAP and a BSP (2024-12-28 to 2026-03-31)
+
+-- by code: the model's error, the morning price's, the gap (model less morning), the model's bias
+  code  runners  model  morning     gap      lo      hi   bias  share%
+  flat    44679 0.3541   0.3724 -0.0183 -0.0234 -0.0130 -0.080     NaN
+    aw    37862 0.3594   0.3948 -0.0354 -0.0409 -0.0296 -0.095     NaN
+hurdle    35719 0.3985   0.4484 -0.0499 -0.0571 -0.0434 -0.131     NaN
+ chase    17049 0.3130   0.3055  0.0074  0.0016  0.0136 -0.068     NaN
+nhflat     4568 0.4967   0.5044 -0.0077 -0.0235  0.0070 -0.127     NaN
+
+race_results: 1,339,547 runs from 2015 for the histories; the placing code column: none found
+joined to a history row: 139,877 of 139,877
+
+=== chases: 17,049 runners in 2,266 races; the model 0.3130, the morning price 0.3055, the gap 0.0074 (0.0015 to 0.0134); the model's bias -0.068 (negative: our price shorter than the BSP)
+
+-- chases by kind (share% = the segment's part of the whole chase gap)
+              kind  runners  model  morning     gap      lo      hi   bias  share%
+          handicap    11552 0.2973   0.2868  0.0104  0.0045  0.0166 -0.064    95.2
+other non-handicap     1231 0.4195   0.3650  0.0544  0.0323  0.0758 -0.070    52.9
+   novice handicap     2158 0.2783   0.2600  0.0183  0.0080  0.0287 -0.060    31.1
+  novice/beginners     2108 0.3723   0.4199 -0.0476 -0.0664 -0.0284 -0.097   -79.2
+
+-- chases by field (share% = the segment's part of the whole chase gap)
+field  runners  model  morning     gap      lo     hi   bias  share%
+  5-7     5795 0.2841   0.2614  0.0227  0.0162 0.0290 -0.059   103.7
+ 8-11     6096 0.3203   0.3173  0.0030 -0.0062 0.0117 -0.072    14.6
+  2-4     1219 0.2313   0.2196  0.0117 -0.0006 0.0244 -0.015    11.2
+  12+     3939 0.3693   0.3788 -0.0095 -0.0269 0.0074 -0.093   -29.5
+
+-- chases by bsp band (share% = the segment's part of the whole chase gap)
+bsp band  runners  model  morning     gap      lo      hi   bias  share%
+     3-6     3666 0.2327   0.2024  0.0303  0.0238  0.0366  0.089    87.6
+    6-12     4674 0.2509   0.2346  0.0162  0.0099  0.0228 -0.006    59.9
+      <3     1210 0.2180   0.1645  0.0536  0.0435  0.0632  0.160    51.2
+   12-25     3894 0.3192   0.3105  0.0087  0.0007  0.0164 -0.106    26.7
+   25-50     1934 0.4071   0.4162 -0.0091 -0.0247  0.0069 -0.225   -13.9
+     50+     1671 0.6081   0.6925 -0.0845 -0.1190 -0.0505 -0.485  -111.4
+
+-- chases by morning money (share% = the segment's part of the whole chase gap)
+morning money  runners  model  morning     gap      lo      hi   bias  share%
+       500-2k     6007 0.2799   0.2516  0.0284  0.0223  0.0340 -0.051   134.5
+          2k+     3704 0.2509   0.2053  0.0456  0.0372  0.0537  0.046   133.3
+      100-500     4528 0.3401   0.3345  0.0056 -0.0029  0.0146 -0.123    20.2
+         <100     2810 0.4216   0.5063 -0.0847 -0.1023 -0.0679 -0.168  -187.9
+
+-- chases by trip (share% = the segment's part of the whole chase gap)
+     trip  runners  model  morning     gap      lo     hi   bias  share%
+    3m2f+     1827 0.3220   0.2794  0.0427  0.0254 0.0597 -0.063    61.5
+2m6f-3m1f     5994 0.3174   0.3068  0.0106  0.0028 0.0183 -0.055    50.2
+  to 2m1f     3128 0.3002   0.3004 -0.0002 -0.0124 0.0119 -0.072    -0.5
+2m2f-2m5f     6100 0.3124   0.3148 -0.0023 -0.0114 0.0061 -0.081   -11.2
+
+-- chases by going (share% = the segment's part of the whole chase gap)
+           going  runners  model  morning     gap      lo      hi   bias  share%
+    Good To Soft     4084 0.3118   0.2781  0.0337  0.0237  0.0438 -0.086   108.7
+            Soft     3504 0.3066   0.2852  0.0214  0.0105  0.0320 -0.065    59.3
+            Good     5193 0.2915   0.2882  0.0033 -0.0061  0.0126 -0.054    13.6
+Yielding To Soft      449 0.3838   0.3851 -0.0013 -0.0296  0.0272 -0.070    -0.5
+   Soft To Heavy      504 0.3821   0.3906 -0.0085 -0.0417  0.0239 -0.131    -3.4
+           Heavy     1257 0.3206   0.3365 -0.0158 -0.0342  0.0022 -0.080   -15.7
+        Yielding     1130 0.3646   0.3945 -0.0299 -0.0641  0.0044 -0.063   -26.7
+Good To Yielding      789 0.3297   0.3944 -0.0647 -0.0898 -0.0396 -0.040   -40.3
+
+-- chases by class (share% = the segment's part of the whole chase gap)
+  class  runners  model  morning     gap      lo      hi   bias  share%
+Class 2     1333 0.3276   0.2672  0.0604  0.0448  0.0765 -0.096    63.5
+Class 1     1071 0.3238   0.2497  0.0740  0.0537  0.0937 -0.080    62.6
+Class 3     2289 0.2816   0.2474  0.0342  0.0254  0.0430 -0.067    61.7
+Class 5     3902 0.3123   0.2997  0.0126  0.0039  0.0218 -0.070    38.8
+Class 4     3387 0.2713   0.2635  0.0078 -0.0001  0.0158 -0.051    20.7
+  Irish     5058 0.3489   0.3859 -0.0370 -0.0496 -0.0240 -0.069  -147.8
+
+-- chases by chase runs before (share% = the segment's part of the whole chase gap)
+chase runs before  runners  model  morning     gap      lo     hi   bias  share%
+               6+     8676 0.3084   0.2943  0.0141  0.0076 0.0207 -0.089    96.6
+              3-5     3532 0.2976   0.2826  0.0150  0.0053 0.0248 -0.038    41.7
+                0     1783 0.3726   0.3822 -0.0096 -0.0258 0.0063 -0.060   -13.5
+              1-2     3058 0.3089   0.3191 -0.0103 -0.0226 0.0016 -0.050   -24.8
+
+-- chases by last run ended (share% = the segment's part of the whole chase gap)
+last run ended  runners  model  morning     gap      lo      hi   bias  share%
+      finished    14259 0.3017   0.2902  0.0114  0.0049  0.0174 -0.068   128.8
+did not finish     2692 0.3570   0.3754 -0.0184 -0.0309 -0.0062 -0.069   -39.0
+
+-- chases by days since (share% = the segment's part of the whole chase gap)
+days since  runners  model  morning     gap      lo     hi   bias  share%
+     31-60     5021 0.2965   0.2824  0.0141  0.0048 0.0236 -0.070    55.9
+     15-30     6370 0.2916   0.2865  0.0052 -0.0023 0.0123 -0.073    26.0
+   151-365     1877 0.3561   0.3476  0.0085 -0.0069 0.0234 -0.044    12.5
+      366+      353 0.5260   0.4991  0.0269 -0.0187 0.0731 -0.060     7.5
+    61-150     1632 0.3372   0.3342  0.0030 -0.0093 0.0149 -0.065     3.9
+      0-14     1698 0.3015   0.3134 -0.0119 -0.0247 0.0006 -0.076   -16.0
+
+-- chases by last run's code (share% = the segment's part of the whole chase gap)
+last run's code  runners  model  morning     gap      lo      hi   bias  share%
+          chase    13783 0.3057   0.2938  0.0119  0.0056  0.0179 -0.075   129.2
+         hurdle     3032 0.3278   0.3440 -0.0162 -0.0277 -0.0052 -0.037   -38.9
+
+-- chases by season runs before (share% = the segment's part of the whole chase gap)
+season runs before  runners  model  morning     gap      lo     hi   bias  share%
+               2-3     5443 0.3028   0.2896  0.0132  0.0050 0.0210 -0.074    56.6
+                4+     6049 0.2961   0.2899  0.0062 -0.0017 0.0142 -0.078    29.6
+0 (seasonal debut)     2747 0.3702   0.3585  0.0116 -0.0022 0.0255 -0.036    25.2
+                 1     2810 0.3129   0.3181 -0.0052 -0.0178 0.0065 -0.068   -11.4
+
+-- chases by green share (share% = the segment's part of the whole chase gap)
+green share  runners  model  morning     gap      lo      hi   bias  share%
+      0-25%     9826 0.3071   0.2868  0.0203  0.0132  0.0269 -0.067   157.7
+     25-50%     3923 0.3004   0.2993  0.0011 -0.0082  0.0097 -0.059     3.4
+     50-75%     1670 0.3342   0.3328  0.0014 -0.0139  0.0167 -0.076     1.9
+    75-100%     1630 0.3568   0.4057 -0.0489 -0.0705 -0.0268 -0.092   -62.9
+
+-- chases by age (share% = the segment's part of the whole chase gap)
+ age  runners  model  morning     gap      lo     hi   bias  share%
+ 8-9     6394 0.3141   0.3045  0.0097  0.0016 0.0177 -0.073    48.8
+   7     4208 0.2939   0.2828  0.0111  0.0020 0.0208 -0.066    36.9
+ 10+     2875 0.3549   0.3476  0.0072 -0.0053 0.0199 -0.087    16.4
+   6     2819 0.2949   0.2940  0.0009 -0.0095 0.0113 -0.047     2.0
+to 5      753 0.3170   0.3239 -0.0070 -0.0292 0.0151 -0.046    -4.1
+
+=== hurdles beside them: 35,719 runners; the model 0.3985, the morning price 0.4484, the gap -0.0499
+
+-- hurdles by kind
+              kind  runners  model  morning     gap      lo      hi   bias  share%
+  novice/beginners    13049 0.4778   0.5728 -0.0950 -0.1083 -0.0816 -0.179    69.6
+          handicap    18159 0.3433   0.3750 -0.0317 -0.0378 -0.0250 -0.099    32.2
+   novice handicap     2669 0.3685   0.3687 -0.0001 -0.0125  0.0122 -0.112     0.0
+other non-handicap     1842 0.4247   0.4071  0.0176 -0.0036  0.0403 -0.145    -1.8
+
+-- hurdles by last run ended
+last run ended  runners  model  morning     gap      lo      hi   bias  share%
+      finished    30463 0.3777   0.4249 -0.0472 -0.0540 -0.0404 -0.122    80.6
+did not finish     3623 0.4228   0.5126 -0.0898 -0.1054 -0.0734 -0.136    18.2
+no earlier run     1633 0.7338   0.7459 -0.0122 -0.0466  0.0236 -0.298     1.1
+
+-- hurdles by days since
+    days since  runners  model  morning     gap      lo      hi   bias  share%
+         15-30    12499 0.3662   0.4187 -0.0525 -0.0608 -0.0442 -0.131    36.8
+          0-14     3797 0.3831   0.4869 -0.1038 -0.1202 -0.0886 -0.166    22.1
+       151-365     3342 0.4201   0.4905 -0.0704 -0.0870 -0.0553 -0.103    13.2
+        61-150     3956 0.4102   0.4696 -0.0594 -0.0733 -0.0457 -0.119    13.2
+         31-60     9788 0.3707   0.3849 -0.0143 -0.0234 -0.0056 -0.104     7.8
+          366+      704 0.4973   0.6436 -0.1463 -0.1803 -0.1104 -0.155     5.8
+no earlier run     1633 0.7338   0.7459 -0.0122 -0.0502  0.0217 -0.298     1.1
+
+-- hurdles by season runs before
+season runs before  runners  model  morning     gap      lo      hi   bias  share%
+                 1     6246 0.4054   0.5031 -0.0977 -0.1115 -0.0833 -0.126    34.2
+               2-3    11226 0.3799   0.4261 -0.0462 -0.0555 -0.0367 -0.127    29.1
+0 (seasonal debut)     6349 0.4823   0.5448 -0.0625 -0.0767 -0.0474 -0.134    22.2
+                4+    11898 0.3677   0.3894 -0.0217 -0.0293 -0.0139 -0.137    14.5
+
+chases, runners whose price moved over 5% from the morning to the BSP: 14,899; moved toward our price on 65.1% (hurdles 67.3%)

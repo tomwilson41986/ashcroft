@@ -1,0 +1,44 @@
+runners with a morning WAP, a BSP and the blend's price: 139,877; with all three members' prices 139,877
+disagreement (sd of the three members' log prices): median 0.0586, 90th pct 0.1358; the members' pairwise correlations of log price: st-dml 0.9946, st-rx 0.9918, dml-rx 0.9920
+   median disagreement by the blend's price band: <3 0.0458, 3-6 0.0460, 6-12 0.0510, 12-25 0.0584, 25-50 0.0702, 50+ 0.1068
+
+== 1. the blend's error against the BSP by third of disagreement, within its price band
+ band  runners    low  middle   high  high-low     lo     hi  spearman
+   <3     6769 0.1857  0.1983 0.2189    0.0332 0.0247 0.0418    0.0842
+  3-6    23450 0.2439  0.2539 0.2933    0.0494 0.0431 0.0553    0.0865
+ 6-12    37521 0.2910  0.3064 0.3513    0.0602 0.0549 0.0658    0.0856
+12-25    32347 0.3524  0.3778 0.4141    0.0617 0.0546 0.0687    0.0683
+25-50    18072 0.4177  0.4279 0.5066    0.0889 0.0770 0.1010    0.0867
+  50+    21718 0.4885  0.5259 0.5572    0.0687 0.0566 0.0806    0.0511
+   pooled (thirds within band): low 0.3392, middle 0.3586, high 0.4017; high less low +0.0625 (+0.0586 to +0.0663); bands with the interval above zero: 6 of 6
+
+== 2. the blend's error less the morning WAP's, by third (negative: the model is the closer)
+   low   : model 0.3392, morning 0.3726, gap -0.0334 (-0.0375 to -0.0295)
+   middle: model 0.3586, morning 0.3899, gap -0.0312 (-0.0352 to -0.0272)
+   high  : model 0.4017, morning 0.4196, gap -0.0179 (-0.0224 to -0.0132)
+
+== 3. the bets: the owner's staking, the closing model fitted on earlier months
+
+   expected CLV >= 3%: 29,104 bets, turnover GBP1,384,941, CLV +9.01% (+8.70 to +9.31); bets by third: {'low': 10133, 'middle': 9805, 'high': 9166}
+     low   : 10,133 bets, GBP   516,329, CLV +8.60% (+8.07 to +9.14), held +7.44%, expected CLV mean +12.26%
+     middle:  9,805 bets, GBP   456,577, CLV +8.92% (+8.40 to +9.44), held +9.32%, expected CLV mean +12.57%
+     high  :  9,166 bets, GBP   412,034, CLV +9.61% (+9.00 to +10.23), held +8.54%, expected CLV mean +13.95%
+     low less high: -1.02 points (-1.88 to -0.20)
+       band <3     low less high: -1.82 points (-3.23 to -0.44); 980 and 972 bets
+       band 3-6    low less high: -0.66 points (-2.08 to +0.75); 3,094 and 2,761 bets
+       band 6-12   low less high: +0.62 points (-0.89 to +2.12); 3,640 and 3,323 bets
+       band 12-25  low less high: -0.78 points (-3.46 to +2.09); 1,805 and 1,662 bets
+       band 25-50  low less high: -5.11 points (-12.22 to +1.75); 459 and 383 bets
+
+   expected CLV >= 0%: 38,119 bets, turnover GBP2,030,111, CLV +6.77% (+6.53 to +7.00); bets by third: {'low': 13380, 'middle': 12929, 'high': 11810}
+     low   : 13,380 bets, GBP   772,532, CLV +6.49% (+6.08 to +6.88), held +5.61%, expected CLV mean +9.64%
+     middle: 12,929 bets, GBP   667,153, CLV +6.89% (+6.46 to +7.32), held +6.97%, expected CLV mean +9.88%
+     high  : 11,810 bets, GBP   590,426, CLV +6.99% (+6.50 to +7.48), held +6.26%, expected CLV mean +11.15%
+     low less high: -0.51 points (-1.18 to +0.18)
+       band <3     low less high: -1.09 points (-2.27 to +0.04); 1,355 and 1,291 bets
+       band 3-6    low less high: -0.15 points (-1.27 to +0.91); 4,085 and 3,611 bets
+       band 6-12   low less high: +1.09 points (-0.15 to +2.37); 4,804 and 4,273 bets
+       band 12-25  low less high: -1.37 points (-3.70 to +1.06); 2,347 and 2,096 bets
+       band 25-50  low less high: -3.94 points (-10.18 to +2.06); 590 and 464 bets
+
+reading: (a) the error rises with disagreement: yes; (b) at the 3% bar the low third's CLV is above the high third's: no -> closed as registered

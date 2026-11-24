@@ -250,6 +250,19 @@ def forward_check(lines, store, day: date) -> dict:
         out["forward_test_own"] = {k: own.get(k) for k in ("races", "lays_placed", "matched", "liability", "pnl", "roi%")}
     except Exception as exc:
         out["forward_test_own"] = {"error": str(exc)[:200]}
+    # the calibrated fill (20 Nov 2026, ledger greyhound-queue-calibration-1120 and greyhound-paper-vs-live-1120): the
+    # one setting that reproduced the live orders - half the printed volume AND the trade-through capped at what
+    # crossed. The two lines above it stay as registered; they are uncapped, and on 11-14 Nov the uncapped fill alone
+    # made the paper lays +1.39% of liability where the calibrated fill made them -0.16%
+    cal_orders = forward_test_orders(store, day)
+    if cal_orders:
+        dk = sr.replay(lines, cal_orders, vol_factor=0.5, comm=COMM, through_cap=True)
+        mk = dk[dk.matched > 0]
+        ok = mk[pd.to_numeric(mk.pnl_sp, errors="coerce").notna()] if len(mk) else mk
+        lk = float((ok.matched * (ok.avg - 1)).sum()) if len(ok) else 0.0
+        out["stream_calibrated"] = {
+            "matched": int(len(mk)), "matched_liability": round(lk, 2),
+            "roi_sp%": round(100 * float(pd.to_numeric(ok.pnl_sp, errors="coerce").sum()) / lk, 2) if lk > 0 else None}
     for vf in (1.0, 0.5):
         orders = forward_test_orders(store, day)
         if not orders:
@@ -364,6 +377,10 @@ def main(argv=None) -> int:
     for k in ("stream_x1.0", "stream_x0.5"):
         if k in ft:
             md.append(f"- queue-aware, traded volume {k[-4:]}: {json.dumps(ft[k])}")
+    if "stream_calibrated" in ft:
+        md.append("- THE TRUSTED FILL (queue as shown, capped trade-through, half the printed volume: the setting that "
+                  f"reproduced the live orders): {json.dumps(ft['stream_calibrated'])}. The two lines above are "
+                  "uncapped and overstate the return.")
     for k in ("stream_x1.0_to_close", "stream_x0.5_to_close"):
         if k in ft:
             md.append(f"- the same lays resting until the market really closes (from 10 Nov 2026; not the gate's "
