@@ -5,7 +5,7 @@ group: (family, name, what it measures, the data it needs, status, where). Statu
 
 - ``built``: computed in this repository; ``where`` is (file, a name found in that file) and
   ``tests/test_football_metric_library.py`` checks it.
-- ``testing``: built on 24 Nov 2026 and scored by ``football-feature-batch-1124`` or ``football-tactics-batch-1124``; not yet in any model.
+- ``testing``: built on 24 Nov 2026 and scored by ``football-feature-batch-1124`` or ``football-tactics-batch-1124`` or ``football-sportmonks-xg-1124``; not yet in any model.
 - ``held``: we hold the data and have not built the metric.
 - ``need``: we do not hold the data.
 
@@ -84,6 +84,7 @@ E = [
     ("Shots and xG", "xG team ratings", "attack and defence fitted on xG", AF, "built", (XG, "def fit_xg_ratings")),
     ("Shots and xG", "Shot xG model, expected threat grid", "our own shot model and a 16 x 12 threat grid", "Wyscout public events (2017/18)", "built", ("football/event_models.py", "xt")),
     ("Shots and xG", "xPts from xG", "points expected from the two sides' xG (simulated scorelines)", AF, "held", None),
+    ("Shots and xG", "Sportmonks xG suite as form (xGoT, npxG, open/set-play xG, xPTS, big chances, dangerous attacks)", "a second provider's xG and statistics, time-decayed, against the market", "Sportmonks Pro + xG bundle (2024/25 on, 35 leagues)", "testing", ("football/blocks/sm_xg.py", "sx_xgd_mkt_diff")),
     ("Shots and xG", "Proxy xG from shot counts, back to 2012", "an xG stand-in where no provider xG exists", FD, "held", None),
     ("Shots and xG", "Post-shot xG (PSxG), shot placement", "chance quality after the strike", "shot-level event data with coordinates", "need", None),
     ("Shots and xG", "Set-piece xG, open-play xG, counter-attack xG", "xG by phase of play", "shot-level event data", "need", None),
@@ -141,7 +142,7 @@ def render() -> str:
            "`football/metric_library.py`; `tests/test_football_metric_library.py` checks every built entry against "
            "the code.", "",
            f"**{len(E)} entries**: {n['built']} built, {n['testing']} built on 24 Nov 2026 and under test "
-           f"(`football-feature-batch-1124`, `football-tactics-batch-1124`), {n['held']} where we hold the data and have not built the metric, "
+           f"(`football-feature-batch-1124`, `football-tactics-batch-1124`, `football-sportmonks-xg-1124`), {n['held']} where we hold the data and have not built the metric, "
            f"{n['need']} where we do not hold the data.", ""]
     fam = None
     for f, name, what, data, status, where in E:

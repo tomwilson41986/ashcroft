@@ -25,13 +25,19 @@ NEW = ["mkt_xg", "decay_form", "sos_split", "venue_fx", "norm_rank", "style", "r
 #: {batch: (ledger tag, blocks in the base, new blocks)}. ``tactics`` (the owner, 24 Nov: "build the match simulator
 #: and formation matchups"): the base also carries the two blocks of the first batch that held on both books
 BATCHES = {"first": ("football-feature-batch-1124", KEPT, NEW),
-           "tactics": ("football-tactics-batch-1124", KEPT + ["sim", "style"], ["formation", "match_sim"])}
+           "tactics": ("football-tactics-batch-1124", KEPT + ["sim", "style"], ["formation", "match_sim"]),
+           "sportmonks": ("football-sportmonks-xg-1124", KEPT + ["sim", "style"], ["sm_xg"])}
+#: {batch: (first training season, (first, last) Pinnacle test season)}: Sportmonks' xG starts in 2024/25, so its
+#: batch fits both arms on 2024/25 alone and tests 2025/26 (the other batches keep the review arms' settings)
+WINDOWS = {"sportmonks": (2024, (2025, 2025))}
 EV_ARM = ra.BASE
+TRAIN_FROM0, DEV0 = ra.TRAIN_FROM, ra.DEV
 
 
 def configure(batch: str = "first") -> None:
     """Point the review-arms runner at a batch (its method is not changed)."""
     _tag, kept, new = BATCHES[batch]
+    ra.TRAIN_FROM, ra.DEV = WINDOWS.get(batch, (TRAIN_FROM0, DEV0))
     ra.BASE = "+".join([EV_ARM] + kept)
     ra.BLOCKS = ["home_adv", "form_short"] + kept + new
     ra.ARMS = {"base": {}, **{b: {"add": b} for b in new}, "all_new": {"add": list(new)}}

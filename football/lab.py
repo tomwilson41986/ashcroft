@@ -71,6 +71,7 @@ STAGE_CODE = {
     "xg": ["football/xg_features.py", "football/team_features.py", "football/player_ratings.py"],
     "players": ["football/player_ratings.py", "football/team_features.py"],
     "tactics": ["football/tactics.py", "football/player_ratings.py"],
+    "sportmonks": ["football/sportmonks_stage.py", "football/data.py"],
 }
 
 
@@ -91,8 +92,9 @@ class Cache:
         hr = Path(self.history_root) if self.history_root else None
         return {"gold": _fp(r / "football/gold/matches.parquet") if r else "s3",
                 "silver": _fp(r / "football/matches.parquet") if r else "s3",
-                "history": "|".join(_fp(hr / f"api_football/history_{x}.parquet")
-                                    for x in ("matches", "players", "events", "stats")) if hr else "none"}
+                "history": "|".join([_fp(hr / f"api_football/history_{x}.parquet")
+                                     for x in ("matches", "players", "events", "stats")]
+                                    + [_fp(hr / "sportmonks/matches.parquet")]) if hr else "none"}
 
     def key(self, stage: str, upstream: list[str], inputs: list[str]) -> str:
         ins = self.inputs()
@@ -147,6 +149,13 @@ class Cache:
             parts += [self.stage("xg", ["team"], ["gold", "history"], xg),
                       self.stage("players", ["team"], ["gold", "history"], players),
                       self.stage("tactics", [], ["gold", "history"], tactics)]
+            smm = hs.get_parquet("sportmonks/matches.parquet")
+            if smm is not None:                       # the owner's Sportmonks plan (24 Nov 2026); absent before it
+
+                def sportmonks():
+                    from football.sportmonks_stage import build as sm_build
+                    return sm_build(gold, smm, aliases)
+                parts.append(self.stage("sportmonks", [], ["gold", "history"], sportmonks))
         key = hashlib.sha256("|".join(self.keys[s] for s in self.keys).encode()).hexdigest()[:16]
         out = self.dir / f"matrix_{key}.parquet"
         if not out.exists():

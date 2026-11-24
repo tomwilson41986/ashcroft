@@ -2,7 +2,7 @@
 
 Every metric family we know of, what it measures, and whether we hold it. Generated from `football/metric_library.py`; `tests/test_football_metric_library.py` checks every built entry against the code.
 
-**93 entries**: 49 built, 9 built on 24 Nov 2026 and under test (`football-feature-batch-1124`, `football-tactics-batch-1124`), 14 where we hold the data and have not built the metric, 21 where we do not hold the data.
+**94 entries**: 49 built, 10 built on 24 Nov 2026 and under test (`football-feature-batch-1124`, `football-tactics-batch-1124`, `football-sportmonks-xg-1124`), 14 where we hold the data and have not built the metric, 21 where we do not hold the data.
 
 
 ## Market
@@ -77,6 +77,7 @@ Every metric family we know of, what it measures, and whether we hold it. Genera
 | xG team ratings | attack and defence fitted on xG | API-Football | Built | `football/xg_features.py` |
 | Shot xG model, expected threat grid | our own shot model and a 16 x 12 threat grid | Wyscout public events (2017/18) | Built | `football/event_models.py` |
 | xPts from xG | points expected from the two sides' xG (simulated scorelines) | API-Football | Data held, not built | - |
+| Sportmonks xG suite as form (xGoT, npxG, open/set-play xG, xPTS, big chances, dangerous attacks) | a second provider's xG and statistics, time-decayed, against the market | Sportmonks Pro + xG bundle (2024/25 on, 35 leagues) | Built 24 Nov, under test | `football/blocks/sm_xg.py` |
 | Proxy xG from shot counts, back to 2012 | an xG stand-in where no provider xG exists | football-data.co.uk results and match counts | Data held, not built | - |
 | Post-shot xG (PSxG), shot placement | chance quality after the strike | shot-level event data with coordinates | Data not held | - |
 | Set-piece xG, open-play xG, counter-attack xG | xG by phase of play | shot-level event data | Data not held | - |
