@@ -38,6 +38,9 @@ jobs:
           D="${DAY:-$(TZ=Europe/London date +%F)}"
           P="s3://$BUCKET/sources/greyhound/sp_lay/$MODE/$D"
           echo "== $P/status.json"; aws s3 cp "$P/status.json" - || echo "no status"
+          # Betfair's settlement of the day (sp_lay.py reconcile, rewritten each morning for the last three days): the
+          # morning job's log can lose the trader's JSON (24 Nov 2026: paper-models.yml run 45335630299 printed only its tail)
+          echo; echo "== $P/reconcile.json"; aws s3 cp "$P/reconcile.json" - 2>/dev/null || echo "not reconciled yet"
           echo; echo "== switches"
           for k in greyhound/STOP greyhound/sp_lay/STOP trading/STOP; do
             aws s3 ls "s3://$BUCKET/$k" > /dev/null 2>&1 && echo "ON:  $k" || echo "off: $k"
