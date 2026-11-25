@@ -71,7 +71,10 @@ def main(argv=None) -> int:
         hd = Historic(login_token())
         out = historic_api.probe(hd) if a.probe else historic_api.update(store, hd, a.days, max_minutes=a.max_minutes)
         print(json.dumps(out, indent=1, default=str))
-        return 1 if (not a.probe and out.get("failed") and not out.get("fetched")) else 0
+        if a.probe:
+            return 0
+        # nothing fetched because a month is not held, or every download failed: a failed run, so it is seen
+        return 1 if not out.get("fetched") and (out.get("failed") or out.get("not_held")) else 0
     elif a.cmd == "build":
         out = {}
         if a.layer in ("silver", "all"):

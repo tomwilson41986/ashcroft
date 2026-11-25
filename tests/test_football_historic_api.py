@@ -66,3 +66,14 @@ def test_a_spent_budget_stops_the_run_and_leaves_the_rest_for_the_next():
 def test_months_split_a_range_at_the_month_end():
     assert ha.months(date(2026, 11, 25), date(2026, 12, 3)) == [(date(2026, 11, 25), date(2026, 11, 30)),
                                                                 (date(2026, 12, 1), date(2026, 12, 3))]
+
+
+def test_a_month_the_account_does_not_hold_is_reported_not_asked_for(tmp_path):
+    class Held(FakeAPI):
+        def my_data(self):
+            return [{"sport": "Soccer", "plan": "Basic Plan", "forDate": "2026-11-01T00:00:00"},
+                    {"sport": "Tennis", "plan": "Basic Plan", "forDate": "2026-12-01T00:00:00"}]
+    api = Held({path("2026/Nov/29", "1.1"): DATA, path("2026/Dec/1", "1.2"): DATA})
+    got = ha.update(Store(root=tmp_path), api, days=10, today=date(2026, 12, 2))
+    assert got["not_held"] == ["2026-12"] and got["fetched"] == 1           # December not held for Soccer
+    assert len(api.bodies) == 1 and api.bodies[0]["fromMonth"] == 11
