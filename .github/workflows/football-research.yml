@@ -42,6 +42,7 @@ on:
           - strategy_100
           - b2l_paper
           - historic_probe
+          - b2l_live_model
           - warehouse
           - warehouse_models
       days:
@@ -238,6 +239,11 @@ jobs:
         run: |
           mkdir -p out
           python -m research.open_close.football_b2l_paper --out-json out/b2l_paper.json
+      - name: The back-to-lay strategy re-scored with a model that reads only what the live feed sees (football-b2l-live-model-1125)
+        if: inputs.job == 'b2l_live_model'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_b2l_live_model --out-json out/b2l_live_model.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |

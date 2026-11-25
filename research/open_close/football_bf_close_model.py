@@ -75,6 +75,9 @@ ROUND_TRIP, COMMISSION = 0.023, 0.02
 THREADS = int(os.environ.get("FOOTBALL_MODEL_THREADS") or min(4, os.cpu_count() or 1))
 THRESHOLDS = (0.03, 0.05, 0.08)
 MEMORY_N, MEMORY_K = 10, 5.0
+#: a past match counts in the move memory only this many minutes after it kicked off (0: once it has closed). The
+#: live strategy uses 7 days, so the memory reads only matches whose price files the warehouse already holds
+MEMORY_LAG_MIN = 0
 LIQUID_TICKS = 60                            # price updates by the checkpoint that make a row "busy"
 LABEL_TAIL = 1.0                             # a move this large in log odds is news or a bad price: reported apart
 ACTIVITY = ([0, 20, 60, 150, 10**9], ["under 20", "20-59", "60-149", "150+"])
@@ -205,6 +208,7 @@ def memory(d: pd.DataFrame) -> pd.DataFrame:
         act = np.ceil((pd.to_datetime(d["kickoff_actual"], utc=True) - base).dt.total_seconds().to_numpy(float)
                       / 60.0)
         known = np.where(np.isfinite(act), np.maximum(ko, np.nan_to_num(act, nan=0.0)), ko).astype(np.int64)
+    known = known + int(MEMORY_LAG_MIN)
     cpi = d["cp_min"].map({c: i for i, c in enumerate(HORIZONS)}).to_numpy(np.int64)
     team = np.where(d["role"] == "home", d["home_id"], np.where(d["role"] == "away", d["away_id"], np.nan))
     opp = np.where(d["role"] == "home", d["away_id"], np.where(d["role"] == "away", d["home_id"], np.nan))
