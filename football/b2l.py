@@ -113,6 +113,48 @@ def cell_for(cp_min: int, forecast: float) -> str | None:
     return max(hits)[1] if hits else None
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# move memory, live: the same means as football_bf_close_model.memory, over matches 7 days old or more
+# ---------------------------------------------------------------------------------------------------------------
+
+MEMORY_KEY = "football/b2l/model/memory.parquet"
+
+
+def memory_history(d: pd.DataFrame, lag_days: int = 7) -> pd.DataFrame:
+    """The moves the live memory reads: one row a usable match-odds runner at a checkpoint, keyed by its side (the
+    home or away team's Betfair selection id; blank for the draw), the country and role, and the epoch minute it
+    may first be read (its kick-off, the later of scheduled and actual, plus ``lag_days``)."""
+    ko = pd.to_datetime(d["kickoff"], utc=True)
+    if "kickoff_actual" in d.columns:
+        ko = pd.concat([ko, pd.to_datetime(d["kickoff_actual"], utc=True)], axis=1).max(axis=1)
+    known = ((ko - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(minutes=1)) + lag_days * 1440
+    team = np.where(d["role"] == "home", d["home_id"], np.where(d["role"] == "away", d["away_id"], np.nan))
+    h = pd.DataFrame({"team": team, "country": d["country_code"].fillna("(none)").to_numpy(), "role": d["role"],
+                      "cp_min": d["cp_min"].astype(int), "known_min": known.astype("int64"),
+                      "y": np.where(d["usable"].to_numpy(bool), d["y_logit"].to_numpy(float), np.nan)})
+    return h[np.isfinite(h["y"])].reset_index(drop=True)
+
+
+def _prior(v: pd.Series, n: int, k: float) -> tuple[float, float]:
+    """The mean of the last ``n`` values (already in time order, all before the moment), shrunk by ``k``."""
+    v = v.tail(n)
+    return (float(v.sum() / (len(v) + k)) if len(v) + k > 0 else np.nan), float(len(v))
+
+
+def memory_features(hist: pd.DataFrame, home_id, away_id, country, role: str, cp_min: int, now_min: int) -> dict:
+    """lv_mm_own, lv_mm_opp, lv_mm_country and their counts for one runner at a checkpoint."""
+    from research.open_close.football_bf_close_model import COUNTRY_K, COUNTRY_N, MEMORY_K, MEMORY_N
+    h = hist[(hist["cp_min"] == cp_min) & (hist["known_min"] < now_min)].sort_values("known_min", kind="stable")
+    own, opp = (home_id, away_id) if role in ("home", "draw") else (away_id, home_id)
+    out = {}
+    for name, team in (("mm_own", own), ("mm_opp", opp)):
+        m, n = _prior(h.loc[h["team"] == team, "y"], MEMORY_N, MEMORY_K)
+        out[f"lv_{name}"], out[f"lv_{name}_n"] = m, n
+    c = h[(h["country"] == (country or "(none)")) & (h["role"] == role)]
+    out["lv_mm_country"], out["lv_mm_country_n"] = _prior(c["y"], COUNTRY_N, COUNTRY_K)
+    return out
+
+
 def save(store, model: dict) -> None:
     store.put(MODEL_KEY, json.dumps(model).encode())
 
@@ -135,6 +177,10 @@ def main(argv=None) -> int:
         d, _full, _live = lm.frame(store)
         model = fit(d, features())
         save(store, model)
+        import io
+        buf = io.BytesIO()
+        memory_history(d).to_parquet(buf, index=False)
+        store.put(MEMORY_KEY, buf.getvalue())
         print(json.dumps({k: model[k] for k in ("fitted_utc", "trained_on", "sha256")}
                          | {"rows_by_role": {r: m["rows"] for r, m in model["roles"].items()}}, indent=1))
     return 0

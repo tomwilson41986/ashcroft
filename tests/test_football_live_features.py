@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import pandas as pd
 
 from football import live_features as lf
@@ -41,3 +42,36 @@ def test_history_thinned_and_the_live_polls_give_the_same_ticks():
                           "selection_id": 7, "last_traded": prices, "inplay": 0, "status": "OPEN"})
     live = lf.ticks_from_polls(polls, {"1.1": "MATCH_ODDS"})
     assert list(thin["pt"]) == list(live["pt"]) and list(thin["ltp"]) == list(live["ltp"])
+
+
+def market(ko=KO):
+    """A match-odds market's ticks (home shortening) and an over/under market's, every minute for 15 hours."""
+    t = np.arange(ko - 900 * MIN, ko, MIN, dtype=np.int64)
+    mo = pd.concat([pd.DataFrame({"selection_id": sid, "pt": t, "ltp": np.round(p0 + slope * np.arange(len(t)) / 2, 2)})
+                    for sid, p0, slope in ((1, 2.6, -0.001), (2, 3.4, 0.0), (3, 3.0, 0.0005))], ignore_index=True)
+    ou = pd.concat([pd.DataFrame({"selection_id": sid, "pt": t, "ltp": p}) for sid, p in ((10, 1.9), (11, 2.0))],
+                   ignore_index=True)
+    return mo, ou
+
+
+def test_the_checkpoint_rows_carry_every_live_feature_and_agree_with_the_warehouse_formulas():
+    from football import b2l
+    from football.warehouse.gold_implied import supremacy_from_1x2, total_from_over
+    mo, ou = market()
+    thin_mo = lf.thin_ticks(mo.assign(market_id="1.5", market_type="MATCH_ODDS", handicap=0.0, seq=0, pre_off=True),
+                            {"1.5": KO})
+    thin_ou = lf.thin_ticks(ou.assign(market_id="1.6", market_type="OVER_UNDER_25", handicap=0.0, seq=0,
+                                      pre_off=True), {"1.6": KO})
+    rows = lf.checkpoint_rows(thin_mo[["selection_id", "pt", "ltp"]], thin_ou[["selection_id", "pt", "ltp"]],
+                              {1: "home", 2: "draw", 3: "away"}, 10, "1.5", 99, KO, 360, 720)
+    assert len(rows) == 3
+    missing = [c for c in b2l.features() if c not in rows.columns and not c.startswith("lv_")]
+    assert missing == []                                   # memory is the caller's
+    p_over = (1 / 1.9) / (1 / 1.9 + 1 / 2.0)
+    tot = total_from_over(np.array([p_over]))
+    home = rows.set_index("role").loc["home"]
+    sup = supremacy_from_1x2(np.array([home["p_cp"]]), np.array([rows.set_index("role").loc["away", "p_cp"]]), tot)
+    assert home["imp_total"] == pytest.approx(tot[0]) and home["imp_supremacy"] == pytest.approx(sup[0])
+    assert home["idl_own_dp"] == pytest.approx(home["idl_d_p_home"]) and home["idl_d_p_home"] > 0   # home shortening
+    assert home["idl_d_p_over"] == pytest.approx(0.0) and home["imp_ou_age_s"] >= 0       # the over/under never moved
+    assert home["pp_x"] == pytest.approx(np.log((1 / home["ltp_cp"]) / (1 - 1 / home["ltp_cp"])))

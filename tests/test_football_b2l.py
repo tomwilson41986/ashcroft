@@ -54,3 +54,15 @@ def test_the_live_feature_list_is_the_re_scored_models():
     f = b2l.features()
     assert f[:5] == ["x_cp", "cp_book_sum", "cp_min", "ko_hour", "ko_dow"] and "idl_own_dp" in f
     assert not any("sup_gap" in c or c.startswith("rate_") or "n_ticks" in c for c in f) and len(f) == len(set(f))
+
+
+def test_live_memory_reads_only_matches_a_week_old_and_shrinks_as_the_research_memory_does():
+    ko = pd.to_datetime(["2026-10-01", "2026-10-10", "2026-10-20"], utc=True)
+    d = pd.DataFrame({"kickoff": ko, "role": "home", "home_id": 7, "away_id": [8, 9, 10], "country_code": "GB",
+                      "cp_min": 360, "usable": True, "y_logit": [0.1, 0.2, 0.9]})
+    hist = b2l.memory_history(d)
+    now = int((pd.Timestamp("2026-10-22", tz="UTC") - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(minutes=1))
+    got = b2l.memory_features(hist, 7, 11, "GB", "home", 360, now)
+    # the 20 Oct match is not a week old on 22 Oct: the mean of 0.1 and 0.2 over (2 + 5)
+    assert got["lv_mm_own"] == pytest.approx(0.3 / 7) and got["lv_mm_own_n"] == 2
+    assert got["lv_mm_opp_n"] == 0 and got["lv_mm_country_n"] == 2

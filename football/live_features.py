@@ -81,3 +81,92 @@ def ticks_from_polls(books: pd.DataFrame, market_types: dict) -> pd.DataFrame:
     return pd.DataFrame({"market_id": b["market_id"].astype(str), "market_type": b["market_id"].astype(str).map(market_types),
                          "selection_id": b["selection_id"].astype("int64"), "handicap": 0.0, "pt": b["pt"],
                          "seq": 0, "ltp": b["ltp"], "pre_off": True}).reset_index(drop=True)
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# the back-to-lay model's other features, from the live polls (football/b2l.py's FEATURES)
+# --------------------------------------------------------------------------------------------------------------------
+
+def book_at(ticks: pd.DataFrame, t_ms: int) -> pd.DataFrame:
+    """Each selection's last traded price as of ``t_ms`` and its age in seconds (ticks of one market)."""
+    t = ticks[ticks["pt"] <= t_ms].sort_values("pt")
+    last = t.groupby("selection_id").tail(1)
+    return pd.DataFrame({"selection_id": last["selection_id"].to_numpy(), "ltp": last["ltp"].to_numpy(float),
+                         "age_s": (t_ms - last["pt"].to_numpy(np.int64)) / 1000.0})
+
+
+def implied(p_home: float, p_draw: float, p_away: float, p_over: float) -> dict:
+    """gold/implied's total, supremacy and draw premium from the normalised 1X2 and over 2.5 chances."""
+    from football.warehouse.gold_implied import rho_from_draw, supremacy_from_1x2, total_from_over
+    total = total_from_over(np.array([p_over], float))
+    sup = supremacy_from_1x2(np.array([p_home], float), np.array([p_away], float), total)
+    lam_h, lam_a = 0.5 * (total + sup), 0.5 * (total - sup)
+    rho = rho_from_draw(lam_h, lam_a, np.array([p_draw], float))
+    return {"total": float(total[0]), "supremacy": float(sup[0]), "rho": float(rho[0]), "p_over": float(p_over),
+            "p_home": p_home, "p_draw": p_draw, "p_away": p_away}
+
+
+def implied_at(mo: pd.DataFrame, ou: pd.DataFrame | None, roles: dict, over_id, t_ms: int) -> dict | None:
+    """The implied columns as gold/implied builds them, from the match-odds and over/under ticks as of ``t_ms``.
+    ``roles``: selection id -> home, draw or away; ``over_id``: the over 2.5 runner. None without a complete 1X2."""
+    b = book_at(mo, t_ms)
+    b = b[b["selection_id"].isin(roles.keys())]
+    if len(b) != 3 or (b["ltp"] <= 1.0).any():
+        return None
+    raw = 1.0 / b["ltp"].to_numpy(float)
+    p = dict(zip(b["selection_id"].map(roles), raw / raw.sum()))
+    out = {"mo_book_sum": float(raw.sum()), "mo_age_s": float(b["age_s"].max())}
+    p_over, ou_age, ou_sum = np.nan, np.nan, np.nan
+    if ou is not None and len(ou):
+        o = book_at(ou, t_ms)
+        if len(o) == 2 and (o["ltp"] > 1.0).all() and over_id in set(o["selection_id"]):
+            r = 1.0 / o["ltp"].to_numpy(float)
+            p_over = float(r[(o["selection_id"] == over_id).to_numpy()][0] / r.sum())
+            ou_age, ou_sum = float(o["age_s"].max()), float(r.sum())
+    out.update(implied(p["home"], p["draw"], p["away"], p_over))
+    out["ou_age_s"], out["ou_book_sum"] = ou_age, ou_sum
+    return out
+
+
+def checkpoint_rows(mo: pd.DataFrame, ou: pd.DataFrame | None, roles: dict, over_id, market_id: str, event_id: int,
+                    kickoff_ms: int, cp_min: int, prev_min: int) -> pd.DataFrame | None:
+    """One row a match-odds runner at the checkpoint ``cp_min`` minutes before ``kickoff_ms``: level, implied, implied
+    changes from ``prev_min`` and the price path from the thinned ticks (``pp_``). Memory is added by the caller."""
+    import pyarrow as pa
+    from football.warehouse import gold_path as gp
+    from football.warehouse.schema import TS
+    t_ms = int(kickoff_ms - cp_min * 60_000)
+    now, before = implied_at(mo, ou, roles, over_id, t_ms), implied_at(mo, ou, roles, over_id,
+                                                                       int(kickoff_ms - prev_min * 60_000))
+    if now is None:
+        return None
+    b = book_at(mo, t_ms)
+    b = b[b["selection_id"].isin(roles.keys())].copy()
+    b["role"] = b["selection_id"].map(roles)
+    p = 1.0 / b["ltp"]
+    b["p_cp"] = p / p.sum()
+    ko = pd.Timestamp(kickoff_ms, unit="ms", tz="UTC")
+    rows = pd.DataFrame({"market_id": market_id, "selection_id": b["selection_id"].astype("int64"),
+                         "role": b["role"], "cp_min": cp_min, "event_id": event_id,
+                         "x_cp": np.log(b["p_cp"] / (1 - b["p_cp"])), "cp_book_sum": now["mo_book_sum"],
+                         "ko_hour": ko.hour + ko.minute / 60.0, "ko_dow": ko.dayofweek, "p_cp": b["p_cp"],
+                         "ltp_cp": b["ltp"]})
+    for c in ("total", "supremacy", "rho", "p_over", "ou_age_s"):
+        rows[f"imp_{c}"] = now[c]
+    for c in ("p_home", "p_draw", "p_away", "p_over", "mo_book_sum", "ou_book_sum", "total", "supremacy", "rho"):
+        rows[f"idl_d_{c}"] = (now[c] - before[c]) if before is not None else np.nan
+    rows["idl_own_dp"] = [rows[f"idl_d_p_{r}"].iloc[0] for r in rows["role"]]
+    # the price path, gold_path's own builder on this market's thinned ticks
+    tk = mo.assign(handicap=0.0, seq=0, pre_off=True, market_type="MATCH_ODDS", market_id=market_id)
+    tk = tk[tk["pt"] <= t_ms]
+    tt = pa.Table.from_pandas(tk[gp.COLUMNS["silver/tick"]].assign(pt=tk["pt"].astype("int64")), preserve_index=False)
+    tt = tt.set_column(tt.schema.get_field_index("pt"), "pt", tt.column("pt").cast(pa.timestamp("ms", "UTC")).cast(TS))
+    cp = pd.DataFrame({"market_id": market_id, "selection_id": rows["selection_id"], "handicap": 0.0,
+                       "cp_min": cp_min, "event_id": event_id, "market_type": "MATCH_ODDS", "role": rows["role"],
+                       "cp_time": pd.Timestamp(t_ms, unit="ms", tz="UTC")})
+    ct = pa.Table.from_pandas(cp, preserve_index=False)
+    ct = ct.set_column(ct.schema.get_field_index("cp_time"), "cp_time", ct.column("cp_time").cast(TS))
+    path = gp.build({"silver/tick": tt, "gold/checkpoint": ct})[gp.SPEC.name].to_pandas()
+    keep = [c for c in path.columns if c not in gp.COLUMNS["gold/checkpoint"]]
+    path = path[["selection_id"] + keep].rename(columns={c: f"pp_{c}" for c in keep})
+    return rows.merge(path, on="selection_id", how="left").reset_index(drop=True)
