@@ -2924,3 +2924,55 @@ Tests: a cached build equals a refitted one, and the card-only build gives each 
 
 The swap is 32 GB (section 56's memory log); the first price runs are watched for memory.
 
+
+## 66. The BFSP forward tests read (25 Nov 2026)
+
+The two forward tests registered on 10 Nov 2026, before any of their days existed
+(`research/greyhound/experiments/bfsp_forward.json`, `bfsp_forward_stack.json`), read once on their registered date.
+Every recipe was fitted on the days before 11 Nov 2026 and scored only on 11-24 Nov: 9,321 runners with a BSP over 13
+days (RMSE of log(BSP)), 9,996 runners over 14 days (log-loss). z is the paired difference over its bootstrap standard
+error by day. The feature cache was rebuilt for the run (refresh). The metric tables these recipes read (figs, form,
+draw, bend) were rebuilt on the morning of 25 Nov by greyhound-pit.yml run 45563302345: that run's runner was shut
+down at the `line` table, but each table is written as it is built.
+
+**bfsp_forward.json** (greyhound-fastloop.yml run 45588067707; baseline live08, RMSE 0.4241, log-loss 0.43718):
+
+| Recipe | RMSE log(BSP) | vs live08 (90%) | z | + per-track stretch | Log-loss | vs live08 | z |
+|---|---|---|---|---|---|---|---|
+| share08 | 0.4027 | -0.0214 (-0.0236 to -0.0195) | -17.3 | 0.3975 | 0.43462 | -0.00256 | -3.4 |
+| share08_figs | 0.3756 | -0.0485 (-0.0529 to -0.0442) | -18.5 | 0.3710 | 0.43350 | -0.00368 | -4.4 |
+| share08_best | 0.3675 | -0.0566 (-0.0607 to -0.0525) | -22.5 | 0.3614 | 0.43341 | -0.00377 | -5.3 |
+
+The rule: share08_figs is adopted if its RMSE gain is 3 standard errors or more and its log-loss no worse beyond 1.
+**It passes** (z -18.5; log-loss better, z -4.4). share08_best, read beside it under the same rule, also passes,
+with the larger gain.
+
+**bfsp_forward_stack.json** (run 45603386409; the same baseline):
+
+| Recipe | RMSE log(BSP) | vs live08 (90%) | z | + per-track stretch | Log-loss | vs live08 | z |
+|---|---|---|---|---|---|---|---|
+| share08_best | 0.3679 | -0.0562 (-0.0600 to -0.0524) | -24.5 | 0.3617 | 0.43353 | -0.00365 | -4.9 |
+| stack3_all3 | 0.3568 | -0.0674 (-0.0713 to -0.0635) | -28.2 | 0.3525 | 0.43267 | -0.00451 | -6.2 |
+
+stack3_all3 against share08_best directly, from the same run's predictions with the fast loop's own pairing
+(`greyhound/fastloop.py paired_bsp_rmse`, `paired_vs_baseline`):
+- RMSE -0.0112 (-0.0132 to -0.0092), z -9.1.
+- Log-loss -0.00086 (-0.00152 to -0.00021), z -2.17.
+
+The rule: stack3_all3 is adopted if its gain over live08 is 3 standard errors or more and its log-loss no worse
+beyond 1; its gain over share08_best decides between the two if both pass. **Both pass, and stack3_all3 beats
+share08_best** on RMSE (z -9.1) with log-loss no worse (better, z -2.2): **stack3_all3 is the forward test's
+choice.**
+
+Its tree seeds stopped on the 1,650-second safety cap (`stopped_by: "time"`, result_stack3_all3.json), not on early
+stopping. It passed even so; a fit run to early stopping might score better, not worse.
+
+**Against the live price.** The live greyhound price has been the stack since 10 Nov 2026 (the owner: "move the live
+greyhound pricing to the new model"), now stack_mlsitd: stack3_all3's form with the league, speed, sequence, Irish,
+trials, draw and bend tables added (sections 54, 63, 65). This forward test confirms, on days no fit had seen, the step
+the live price already took: the stack against the old live recipe (live08) and against the best single tree model.
+It does not test stack_mlsitd itself; its own out-of-sample record is the locked holdout from 19 Nov. No change to
+`greyhound/live.py` follows from this reading; any change is the owner's decision.
+
+Both tests price these days worse than batch 18's test window (1 Jun to 5 Nov 2026: stack3_all3 0.3396). live08's
+error is biased short (-0.081) and is worst on the outsiders (BSP 15 and over: RMSE 0.729, bias -0.516).
