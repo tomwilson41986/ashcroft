@@ -1517,3 +1517,28 @@ power method will replace proportional for bookmaker prices in the lab's targets
 
 **football-data's xG columns (HxG, AxG)**: 2,196 matches in 18 divisions since August 2026. Correlation 0.92 with
 Sportmonks' xG on the same matches, 0.05 lower on average. A candidate feature once a full season is held.
+
+## Back-to-lay with a model that reads only what the live feed sees (25 Nov 2026)
+
+The owner, 25 Nov: back-to-lay live at GBP 2 a bet and GBP 50 a day. Registered as `football-b2l-live-model-1125`.
+Source: football-research.yml run 45689634838, `reports/football_runs/b2l_live_model_1125.json`. The live model has
+44 features: the price path from the history thinned to the live feed's polling times (present on 93% of rows), no
+tick-only features, no Asian handicap, no ratings, and move memory delayed 7 days. Its move skill is 3.5% (3.2 to 3.8)
+against the full model's 4.7% on the same 338,781 rows.
+
+| Cell | Model | Trades | Return a unit (tick worse) | 90% interval | Odd months | Even months | Deflated Sharpe | |
+|---|---|---|---|---|---|---|---|---|
+| 360 min, over 0.05 | live | 1,665 | +4.9% | +2.8 to +7.3 | +3.2% | +6.3% | 0.32 | lead |
+| 360 min, over 0.05 | full | 2,640 | +5.3% | +3.9 to +7.1 | +4.4% | +6.2% | 0.92 | lead |
+| 360 min, over 0.03 | live | 4,535 | +1.8% | +1.1 to +2.9 | +0.9% | +2.7% | 0.41 | lead |
+| 360 min, over 0.03 | full | 6,261 | +2.2% | +1.6 to +2.9 | +1.8% | +2.6% | 0.99 | pass |
+| 15 min, over 0.05 | live | 2,371 | +6.4% | +3.5 to +10.0 | +4.2% | +8.6% | 0.85 | lead |
+| 15 min, over 0.05 | full | 3,475 | +4.4% | +2.4 to +7.1 | +2.9% | +5.8% | 0.98 | pass |
+| 15 min, over 0.08 | live | 771 | +20.5% | +12.2 to +31.5 | +14.0% | +27.1% | 0.94 | lead |
+| 15 min, over 0.08 | full | 1,173 | +13.9% | +8.1 to +21.3 | +9.2% | +18.3% | 0.83 | lead |
+
+The full model's figures differ a little from 24 Nov's (one more month of rows, and the implied-changes family
+added). Reading: with the live model every cell stays profitable in both halves, but none clears the deflated Sharpe of
+0.95 with all 475 football rules counted, so by the registered reading nothing goes live. The nearest is 15 minutes
+with a forecast over 0.08 (0.94). All prices are last traded; the paper test at the recorded quotes is the next
+evidence.

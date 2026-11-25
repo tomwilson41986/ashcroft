@@ -135,6 +135,10 @@ jobs:
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: python -m football.warehouse facts --out out/facts.json > /dev/null
+      - name: Refit the back-to-lay model the football trader loads (football/b2l/model/latest.json; nothing is traded here)
+        if: ${{ !cancelled() && steps.quality.outcome == 'success' }}
+        continue-on-error: true
+        run: python -m football.b2l --fit | tee out/b2l_model.json
       - name: Closing-price model on the move panel (development read; nothing is traded)
         if: ${{ !cancelled() && inputs.models }}
         continue-on-error: true

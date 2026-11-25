@@ -1,0 +1,435 @@
+{
+ "tag": "football-b2l-live-model-1125",
+ "rows": 403245,
+ "full_features": 98,
+ "live_features": [
+  "x_cp",
+  "cp_book_sum",
+  "cp_min",
+  "ko_hour",
+  "ko_dow",
+  "imp_total",
+  "imp_supremacy",
+  "imp_rho",
+  "imp_p_over",
+  "imp_ou_age_s",
+  "pp_x",
+  "pp_ret_15m",
+  "pp_ret_30m",
+  "pp_ret_1h",
+  "pp_ret_2h",
+  "pp_ret_6h",
+  "pp_ret_24h",
+  "pp_ret_first",
+  "pp_hours_since_first",
+  "pp_slope_6h",
+  "pp_slope_24h",
+  "pp_slope_r2_6h",
+  "pp_slope_r2_24h",
+  "pp_range_pos_24h",
+  "pp_drawdown_24h",
+  "pp_runup_24h",
+  "pp_twap_dev_1h",
+  "pp_twap_dev_6h",
+  "lv_mm_own",
+  "lv_mm_own_n",
+  "lv_mm_opp",
+  "lv_mm_opp_n",
+  "lv_mm_country",
+  "lv_mm_country_n",
+  "idl_d_p_home",
+  "idl_d_p_draw",
+  "idl_d_p_away",
+  "idl_d_p_over",
+  "idl_d_mo_book_sum",
+  "idl_d_ou_book_sum",
+  "idl_d_rho",
+  "idl_d_total",
+  "idl_d_supremacy",
+  "idl_own_dp"
+ ],
+ "poll_path_coverage": 0.9292,
+ "note": "development evidence: last traded prices; nothing is traded",
+ "move_skill": {
+  "full": {
+   "skill": 0.04743412015523163,
+   "lo95": 0.043575082935494516,
+   "hi95": 0.05152138474469435,
+   "days": 518,
+   "rows": 338781
+  },
+  "live": {
+   "skill": 0.034625733167230055,
+   "lo95": 0.03172692615845295,
+   "hi95": 0.03793673929668972,
+   "days": 518,
+   "rows": 338781,
+   "vs_base": -0.012808386988001574,
+   "vs_base_lo95": -0.014953137688997342,
+   "vs_base_hi95": -0.01069006493819818
+  }
+ },
+ "cells_live_model": {
+  "360 over 0.05": {
+   "all": {
+    "bets": 1665,
+    "days": 476,
+    "return": 0.04864249526300788,
+    "lo90": 0.028357626825480157,
+    "hi90": 0.07289592913337624,
+    "won_share": 0.5117117117117117,
+    "deflated_sharpe": {
+     "n_obs": 476,
+     "n_trials": 501,
+     "sharpe": 0.129858,
+     "dsr": 0.316899,
+     "passed": false,
+     "reason": "DSR 0.317 below 0.95"
+    }
+   },
+   "all_at_the_price": {
+    "bets": 1665,
+    "days": 476,
+    "return": 0.08741716208698028,
+    "lo90": 0.06532816750189507,
+    "hi90": 0.11354880517923936,
+    "won_share": 0.6054054054054054
+   },
+   "odd_months": {
+    "bets": 773,
+    "days": 225,
+    "return": 0.03221752914903466,
+    "lo90": 0.016619623797497717,
+    "hi90": 0.05011143841985229,
+    "won_share": 0.5148771021992238
+   },
+   "even_months": {
+    "bets": 892,
+    "days": 251,
+    "return": 0.06287623831917524,
+    "lo90": 0.031567724158973326,
+    "hi90": 0.10721713553004425,
+    "won_share": 0.5089686098654709
+   },
+   "lead": true,
+   "pass": false
+  },
+  "360 over 0.03": {
+   "all": {
+    "bets": 4535,
+    "days": 515,
+    "return": 0.018353549445424062,
+    "lo90": 0.01068477883886561,
+    "hi90": 0.028658768577767484,
+    "won_share": 0.47739801543550164,
+    "deflated_sharpe": {
+     "n_obs": 515,
+     "n_trials": 501,
+     "sharpe": 0.129492,
+     "dsr": 0.413598,
+     "passed": false,
+     "reason": "DSR 0.414 below 0.95"
+    }
+   },
+   "all_at_the_price": {
+    "bets": 4535,
+    "days": 515,
+    "return": 0.049056840461102924,
+    "lo90": 0.04059830695215353,
+    "hi90": 0.060333121060124846,
+    "won_share": 0.575303197353914
+   },
+   "odd_months": {
+    "bets": 2139,
+    "days": 243,
+    "return": 0.00905915404688905,
+    "lo90": 0.0020090895318581174,
+    "hi90": 0.01603963732775534,
+    "won_share": 0.4777933613838242
+   },
+   "even_months": {
+    "bets": 2396,
+    "days": 272,
+    "return": 0.026651008442697178,
+    "lo90": 0.01311654010168459,
+    "hi90": 0.04203388819403892,
+    "won_share": 0.47704507512520866
+   },
+   "lead": true,
+   "pass": false
+  },
+  "15 over 0.05": {
+   "all": {
+    "bets": 2371,
+    "days": 499,
+    "return": 0.06438798924843134,
+    "lo90": 0.03530698415516597,
+    "hi90": 0.0996260925012096,
+    "won_share": 0.4664698439477014,
+    "deflated_sharpe": {
+     "n_obs": 499,
+     "n_trials": 501,
+     "sharpe": 0.159065,
+     "dsr": 0.854021,
+     "passed": false,
+     "reason": "DSR 0.854 below 0.95"
+    }
+   },
+   "all_at_the_price": {
+    "bets": 2371,
+    "days": 499,
+    "return": 0.11925212844290559,
+    "lo90": 0.08807248023090675,
+    "hi90": 0.15738007010136154,
+    "won_share": 0.6195698017714044
+   },
+   "odd_months": {
+    "bets": 1165,
+    "days": 240,
+    "return": 0.04193290139303438,
+    "lo90": 0.019800577151806366,
+    "hi90": 0.0686363858139854,
+    "won_share": 0.4703862660944206
+   },
+   "even_months": {
+    "bets": 1206,
+    "days": 259,
+    "return": 0.08607967859464814,
+    "lo90": 0.036017896808946376,
+    "hi90": 0.14943665605477377,
+    "won_share": 0.4626865671641791
+   },
+   "lead": true,
+   "pass": false
+  },
+  "15 over 0.08": {
+   "all": {
+    "bets": 771,
+    "days": 369,
+    "return": 0.2049405975231914,
+    "lo90": 0.12230965338499823,
+    "hi90": 0.31515443559573453,
+    "won_share": 0.5460440985732814,
+    "deflated_sharpe": {
+     "n_obs": 369,
+     "n_trials": 501,
+     "sharpe": 0.200272,
+     "dsr": 0.940821,
+     "passed": false,
+     "reason": "DSR 0.941 below 0.95"
+    }
+   },
+   "all_at_the_price": {
+    "bets": 771,
+    "days": 369,
+    "return": 0.2798332933900426,
+    "lo90": 0.19190588740458406,
+    "hi90": 0.3961923409134928,
+    "won_share": 0.6783398184176395
+   },
+   "odd_months": {
+    "bets": 388,
+    "days": 176,
+    "return": 0.13993249674889638,
+    "lo90": 0.07992797401100335,
+    "hi90": 0.22713561221217482,
+    "won_share": 0.5850515463917526
+   },
+   "even_months": {
+    "bets": 383,
+    "days": 193,
+    "return": 0.2707973680203884,
+    "lo90": 0.11066710143398167,
+    "hi90": 0.4683955690023365,
+    "won_share": 0.5065274151436031
+   },
+   "lead": true,
+   "pass": false
+  }
+ },
+ "cells_full_model": {
+  "360 over 0.05": {
+   "all": {
+    "bets": 2640,
+    "days": 504,
+    "return": 0.053018536735768874,
+    "lo90": 0.03905619802340497,
+    "hi90": 0.07138289587942735,
+    "won_share": 0.5378787878787878,
+    "deflated_sharpe": {
+     "n_obs": 504,
+     "n_trials": 501,
+     "sharpe": 0.180527,
+     "dsr": 0.921311,
+     "passed": false,
+     "reason": "DSR 0.921 below 0.95"
+    }
+   },
+   "all_at_the_price": {
+    "bets": 2640,
+    "days": 504,
+    "return": 0.0884036582932792,
+    "lo90": 0.07361694589170441,
+    "hi90": 0.10785941171584419,
+    "won_share": 0.6329545454545454
+   },
+   "odd_months": {
+    "bets": 1284,
+    "days": 239,
+    "return": 0.043644926386096274,
+    "lo90": 0.029718991804541395,
+    "hi90": 0.05876404471995019,
+    "won_share": 0.5397196261682243
+   },
+   "even_months": {
+    "bets": 1356,
+    "days": 265,
+    "return": 0.061894433261565046,
+    "lo90": 0.03731812580721869,
+    "hi90": 0.09072765586897377,
+    "won_share": 0.5361356932153393
+   },
+   "lead": true,
+   "pass": false
+  },
+  "360 over 0.03": {
+   "all": {
+    "bets": 6261,
+    "days": 518,
+    "return": 0.021881790874406875,
+    "lo90": 0.01572972679514135,
+    "hi90": 0.02943027980219433,
+    "won_share": 0.49353138476281744,
+    "deflated_sharpe": {
+     "n_obs": 518,
+     "n_trials": 501,
+     "sharpe": 0.21415,
+     "dsr": 0.994143,
+     "passed": true,
+     "reason": ""
+    }
+   },
+   "all_at_the_price": {
+    "bets": 6261,
+    "days": 518,
+    "return": 0.05077635140025983,
+    "lo90": 0.044126126546107154,
+    "hi90": 0.058897729581046714,
+    "won_share": 0.5947931640313049
+   },
+   "odd_months": {
+    "bets": 3020,
+    "days": 245,
+    "return": 0.017992497311942194,
+    "lo90": 0.011429880356142478,
+    "hi90": 0.025437737556904767,
+    "won_share": 0.49801324503311256
+   },
+   "even_months": {
+    "bets": 3241,
+    "days": 273,
+    "return": 0.025505878056956508,
+    "lo90": 0.01540250306693944,
+    "hi90": 0.038357458249835705,
+    "won_share": 0.48935513730330144
+   },
+   "lead": true,
+   "pass": true
+  },
+  "15 over 0.05": {
+   "all": {
+    "bets": 3475,
+    "days": 510,
+    "return": 0.04399873858744928,
+    "lo90": 0.023452286644916054,
+    "hi90": 0.07086867020817011,
+    "won_share": 0.4494964028776978,
+    "deflated_sharpe": {
+     "n_obs": 510,
+     "n_trials": 501,
+     "sharpe": 0.177609,
+     "dsr": 0.979819,
+     "passed": true,
+     "reason": ""
+    }
+   },
+   "all_at_the_price": {
+    "bets": 3475,
+    "days": 510,
+    "return": 0.09288239277752974,
+    "lo90": 0.07138773244951395,
+    "hi90": 0.12157437931514248,
+    "won_share": 0.6057553956834533
+   },
+   "odd_months": {
+    "bets": 1666,
+    "days": 242,
+    "return": 0.02926291530448734,
+    "lo90": 0.013844822344736123,
+    "hi90": 0.04955875942415438,
+    "won_share": 0.45918367346938777
+   },
+   "even_months": {
+    "bets": 1809,
+    "days": 268,
+    "return": 0.05756970685136004,
+    "lo90": 0.022950996637738374,
+    "hi90": 0.09842344510373034,
+    "won_share": 0.4405749032614704
+   },
+   "lead": true,
+   "pass": true
+  },
+  "15 over 0.08": {
+   "all": {
+    "bets": 1173,
+    "days": 421,
+    "return": 0.13919692800880168,
+    "lo90": 0.08068776012611195,
+    "hi90": 0.2131556394346622,
+    "won_share": 0.5021312872975278,
+    "deflated_sharpe": {
+     "n_obs": 421,
+     "n_trials": 501,
+     "sharpe": 0.173741,
+     "dsr": 0.832659,
+     "passed": false,
+     "reason": "DSR 0.833 below 0.95"
+    }
+   },
+   "all_at_the_price": {
+    "bets": 1173,
+    "days": 421,
+    "return": 0.20800897931982507,
+    "lo90": 0.14506197840664722,
+    "hi90": 0.286750522053971,
+    "won_share": 0.6513213981244672
+   },
+   "odd_months": {
+    "bets": 561,
+    "days": 197,
+    "return": 0.09176245232717016,
+    "lo90": 0.0482774775419122,
+    "hi90": 0.14583378149863233,
+    "won_share": 0.5222816399286988
+   },
+   "even_months": {
+    "bets": 612,
+    "days": 224,
+    "return": 0.1826785307169639,
+    "lo90": 0.07887129824029684,
+    "hi90": 0.3133019722110707,
+    "won_share": 0.48366013071895425
+   },
+   "lead": true,
+   "pass": false
+  }
+ },
+ "passes_live_model": [],
+ "leads_live_model": [
+  "15 over 0.05",
+  "15 over 0.08",
+  "360 over 0.03",
+  "360 over 0.05"
+ ]
+}

@@ -413,6 +413,7 @@ class Feed:
         self.last_catalogue: datetime | None = None
         self.reads = 0
         self.rows = 0
+        self.last_rows: list[dict] = []
 
     def refresh(self, now: datetime) -> int:
         raw = catalogue_all(self.read, now - timedelta(hours=2), now + timedelta(hours=self.hours), self.types)
@@ -515,6 +516,7 @@ class Feed:
         if self.last_catalogue is None or (now - self.last_catalogue).total_seconds() >= self.catalogue_seconds:
             new = self.refresh(now)
         rows = self.poll(now)
+        self.last_rows = rows                    # the newest reads, for a strategy in the same process (football/b2l_trader.py)
         return {"markets": len(self.markets), "new": new, "rows": len(rows), "reads": self.reads}
 
     def save(self) -> None:
