@@ -64,6 +64,7 @@ jobs:
       - name: Install dependencies
         run: pip install -q -r requirements.txt -r football/warehouse/requirements.txt
       - name: The last ten days' soccer files from Betfair's Historic Data API into bronze (read-only; no orders)
+        shell: bash                # -eo pipefail: a failed fetch behind "| tee" fails the step (25 Nov: it did not)
         env:
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}

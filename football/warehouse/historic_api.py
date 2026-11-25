@@ -59,6 +59,20 @@ def held_raw(store, d_from: date, d_to: date) -> set[str]:
     return have
 
 
+def held_months(hd, sport: str = SPORT) -> set[str] | None:
+    """The months ('YYYY-MM') the account holds of ``sport`` on the BASIC plan (``GetMyData``: one entry a month the
+    account has "bought", at no charge, on historicdata.betfair.com). Listing a month the account does not hold is a
+    400 Bad Request (the first nightly run, 25 Nov 2026). None when the service does not say."""
+    from betfair_historic import PLAN
+    try:
+        mine = hd.my_data()
+    except Exception as exc:                                   # reported; the listing will show what is refused
+        log.warning("GetMyData not read (%s)", exc)
+        return None
+    out = {str(d.get("forDate", ""))[:7] for d in mine if d.get("sport") == sport and d.get("plan") == PLAN}
+    return {m for m in out if len(m) == 7}
+
+
 def update(store, hd, days: int = 10, today: date | None = None, max_minutes: float | None = None,
            workers: int = 4) -> dict:
     """Fetch the files of the last ``days`` days the store lacks and add them to bronze. ``hd`` is a
@@ -73,7 +87,13 @@ def update(store, hd, days: int = 10, today: date | None = None, max_minutes: fl
     out = {"from": str(d_from), "to": str(d_to), "listed": 0, "held": 0, "fetched": 0, "failed": 0,
            "stopped": False, "by_day": {}}
     ing = Ingest(store, SOURCE)
+    held = held_months(hd) if hasattr(hd, "my_data") else None
+    out["months_held"] = sorted(held)[-3:] if held else held
+    out["not_held"] = []
     for a, b in months(d_from, d_to):
+        if held is not None and a.strftime("%Y-%m") not in held:
+            out["not_held"].append(a.strftime("%Y-%m"))
+            continue
         paths = hd.files(Historic.body(SPORT, a, b, MARKETS, []))
         out["listed"] += len(paths)
         todo = [p for p in paths if raw_key(SPORT, p) not in have]
@@ -109,7 +129,7 @@ def probe(hd, today: date | None = None) -> dict:
     from betfair_historic import Historic
     today = today or date.today()
     y = today - timedelta(days=1)
-    held = [{"sport": d.get("sport"), "plan": d.get("plan"), "from": f"{d.get('forDate', '')}"[:10]}
-            for d in hd.my_data()][:20]
+    months_held = held_months(hd) or set()
+    held = {"soccer_months_held": len(months_held), "latest": sorted(months_held)[-3:]}
     n = len(hd.files(Historic.body(SPORT, y, y, MARKETS, [])))
     return {"login": "ok", "held": held, "soccer_files_listed_for": str(y), "listed": n}
