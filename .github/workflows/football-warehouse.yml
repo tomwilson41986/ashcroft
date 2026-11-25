@@ -12,10 +12,11 @@ on:
   # nightly (the owner, 24 Nov 2026: "automate the download"): the last ten days from Betfair's Historic Data API,
   # then silver, gold, link and checks, so the paper tests see each day's matches within a day or two. Betfair
   # refuses logins from GitHub's runners (403 at identitysso.betfair.com, run 45413693273), so the fetch runs on the
-  # owner's paper-models runner in its gap between the greyhound archive (ends by 05:15 UTC) and the greyhound day
-  # (05:45 UTC): the owner's choice, 24 Nov 2026
+  # owner's football runner in its gap between one day's football trader (23.5 hours from 05:40 UTC, so to about
+  # 05:10) and the next (05:40 UTC): the owner's choice, 25 Nov 2026 (the paper-models runner, chosen first, was busy
+  # with the greyhound archive until 05:35 on 25 Nov)
   schedule:
-    - cron: '15 5 * * *'      # fetch on the paper-models runner 05:15-05:38 UTC, then build on GitHub's runner
+    - cron: '12 5 * * *'      # fetch on the football runner 05:12-05:36 UTC, then build on GitHub's runner
   workflow_dispatch:
     inputs:
       force:
@@ -38,12 +39,12 @@ concurrency:
 
 jobs:
   fetch:
-    runs-on: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+    runs-on: ${{ vars.FOOTBALL_RUNNER || 'football' }}
     timeout-minutes: 30
     steps:
       - name: Not on the horse racing runner
         env:
-          RUNNER_LABEL: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+          RUNNER_LABEL: ${{ vars.FOOTBALL_RUNNER || 'football' }}
           LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
         run: |
           if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
@@ -55,7 +56,7 @@ jobs:
         run: |
           VENV="$HOME/.venvs/ashcroft-football-data"
           if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
-            UV="$HOME/.venvs/uv-paper"
+            UV="$HOME/.venvs/uv-football"
             [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
             rm -rf "$VENV"
             "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
@@ -75,11 +76,15 @@ jobs:
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
         run: |
-          # done by 05:38 UTC whatever happens: the greyhound day starts on this runner at 05:45 UTC
+          # done by 05:36 UTC whatever happens: the football trader starts on this runner at 05:40 UTC
           now=$(date -u +%s)
-          stop=$(date -u -d "$(date -u +%F) 05:38" +%s)
+          stop=$(date -u -d "$(date -u +%F) 05:36" +%s)
           MAX=$(( (stop - now) / 60 ))
-          if [ "$MAX" -le 0 ] || [ "$MAX" -gt 20 ]; then MAX=20; fi
+          if [ "$MAX" -lt 2 ] && [ "$MAX" -gt -1200 ]; then
+            echo "past 05:34 UTC: no time before the trader's start; tonight's fetch is skipped (the next covers 10 days)"
+            exit 0
+          fi
+          if [ "$MAX" -le 0 ] || [ "$MAX" -gt 20 ]; then MAX=20; fi        # a run by hand outside the window
           mkdir -p out
           timeout $(( MAX * 60 + 120 )) python -m football.warehouse historic --days 10 --max-minutes "$MAX" | tee out/historic.json
       - uses: actions/upload-artifact@v4

@@ -14,8 +14,8 @@ then see each day's matches within a day or two.
 - Betfair publishes a day's BASIC files some time after the day; a file that is not listed yet is fetched on a later
   run. Running every night with ``days`` of 10 or more covers the delay.
 - Where it runs: Betfair refuses logins from GitHub's runners (403 at identitysso.betfair.com, run 45413693273), so
-  the nightly fetch runs on the owner's paper-models runner, 05:15-05:38 UTC (football-warehouse.yml, the owner's
-  choice, 24 Nov 2026), and the build after it on GitHub's runner.
+  the nightly fetch runs on the owner's football runner, 05:12-05:36 UTC, between one day's football trader and the
+  next (football-warehouse.yml, the owner's choice, 25 Nov 2026), and the build after it on GitHub's runner.
 - Read-only on Betfair: a login and the Historic Data API, no orders. The login is the trading account's
   (``BETFAIR_USERNAME``, ``BETFAIR_PASSWORD``, ``BETFAIR_APP_KEY``), never written anywhere.
 
