@@ -1,0 +1,36 @@
+{
+  "id": "football-b2l",
+  "sport": "football",
+  "name": "Back-to-lay on the move model's forecast",
+  "stage": "legacy",
+  "hypothesis": "Where the Betfair-native move model forecasts a match-odds runner's chance rising (360 minutes before the off, over 0.05 or 0.03; 15 minutes, over 0.05 or 0.08), backing at the checkpoint and laying in the last two minutes before the off makes money after commission.",
+  "markets": [
+    "MATCH_ODDS"
+  ],
+  "entry_point": "python -m football.live --trade --all-games",
+  "workflow": "football-trade.yml",
+  "live_switch": "FOOTBALL_LIVE",
+  "order_ref_prefix": "b2l-",
+  "bucket": "capture",
+  "stop_keys": [
+    "football/STOP",
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "safe",
+  "dashboard_ids": [],
+  "evidence": [
+    {
+      "claim": "four cells pass at last traded prices with the full model; all four are leads and none passes with the live-feed model (deflated Sharpe 0.32, 0.41, 0.85, 0.94)",
+      "source": "reports/football_model_rethink.md (Back-to-lay with a model that reads only what the live feed sees, 25 Nov 2026); reports/football_runs/b2l_live_model_1125.json"
+    },
+    {
+      "claim": "GBP 2 a bet, GBP 50 of backs a day, fill-or-kill backs and lays, real orders only when the trader runs live",
+      "source": "football/b2l_trader.py; tests/test_workflow_guards.py (test_the_back_to_lay_strategy_bets_what_the_owner_set)"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-11-25",
+    "source": "reports/research_ledger.jsonl football-b2l-live-1125 (the owner: \"live, £2 a bet, £50 a day\"; \"Live on all four\")"
+  }
+}

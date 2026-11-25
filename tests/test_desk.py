@@ -47,6 +47,7 @@ def test_every_trader_that_can_place_an_order_is_registered_with_the_prefix_its_
     assert f'REF = "{by["greyhound-take-close"].order_ref_prefix}"' in src("greyhound/take_close.py")
     assert 'ref = f"gh-' in src("greyhound/live.py") and by["greyhound-win-paper"].order_ref_prefix == "gh-"
     assert 'ref=f"fb-' in src("football/live.py") and by["football-match-odds"].order_ref_prefix == "fb-"
+    assert f'REF_PREFIX = "{by["football-b2l"].order_ref_prefix}"' in src("football/b2l_trader.py")
 
 
 def test_the_registry_covers_every_trader_on_the_dashboard():

@@ -522,3 +522,17 @@ def test_training_and_serving_run_one_python():
                         v = str(step["with"]["python-version"])
         return v
     assert version("train-bfsp.yml") == version("research-loop.yml") == version("predict.yml") == "3.12"
+
+
+def test_the_back_to_lay_strategy_bets_what_the_owner_set():
+    """The owner, 25 Nov 2026 ("live, £2 a bet, £50 a day"; "Live on all four"; ledger football-b2l-live-1125): the
+    back-to-lay strategy runs inside the football trader's one process (no second command on the live key), at GBP 2 a
+    bet and GBP 50 of backs a day, every order fill-or-kill, real only when the trader runs live. The value bets keep
+    their own GBP 20 a day (test_the_football_trader_bets_small_and_only_when_switched_on)."""
+    src = (Path(__file__).resolve().parents[1] / "football" / "b2l_trader.py").read_text()
+    assert "\nSTAKE = 2.0\n" in src and "\nDAY_CAP = 50.0\n" in src
+    assert src.count('"FILL_OR_KILL"') == 1 and "min_fill=size" in src          # the lay here; the back is the trader's
+    live = (Path(__file__).resolve().parents[1] / "football" / "live.py").read_text()
+    assert "B2L(ex, store, mode, kill_switch(store))" in live                   # the trader's exchange and mode, its STOP
+    text = (WORKFLOWS / "football-trade.yml").read_text()
+    assert "b2l" not in text                                                    # no command of its own
