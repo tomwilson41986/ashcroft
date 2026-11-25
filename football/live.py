@@ -427,6 +427,12 @@ def trade(until: str, live: bool, store, cfg: dict | None = None, all_games: boo
                     inplay_min_matched=float(cfg.get("inplay_min_matched", 10000.0)))
     trader = Trader(ex, Pricer(model, aliases, cfg["limits"].get("min_team_matches", 10)), cfg, mode, store,
                     kill_switch(store))
+    b2l = None
+    if feed is not None and cfg.get("b2l", True):
+        # back-to-lay on the feed's polls (the owner, 25 Nov 2026: GBP 2 a bet, GBP 50 a day; football/b2l_trader.py):
+        # real orders only when this process trades live, as the value bets
+        from football.b2l_trader import B2L
+        b2l = B2L(ex, store, mode, kill_switch(store))
     day = _uk_now().date().isoformat()
     end_h, end_m = (int(x) for x in until.split(":"))
     end_at = time.monotonic() + hours * 3600 if hours else None
@@ -452,21 +458,34 @@ def trade(until: str, live: bool, store, cfg: dict | None = None, all_games: boo
                     log.info("all games: %s", got)
             except Exception as exc:                      # the record must not stop the trader
                 log.warning("all-games step failed: %s", str(exc)[:300])
+            if b2l is not None:
+                try:
+                    b2l.step(feed)
+                except Exception as exc:                  # nor the back-to-lay strategy
+                    log.warning("b2l step failed: %s", str(exc)[:300])
         if time.monotonic() - last_save > 600:
             save_day(trader, store, day)
             if feed is not None:
                 feed.save()
+            if b2l is not None:
+                b2l.save(day)
             last_save = time.monotonic()
         time.sleep(cfg["poll_seconds"])
     save_day(trader, store, day)
     if feed is not None:
         feed.save()
+    if b2l is not None:
+        b2l.save(day)
     out = {"mode": mode, "day": day, "markets": len(trader.markets), "decisions": len(trader.rows),
            "bets": trader.bets, "turnover": round(trader.turnover, 2)}
     if feed is not None:
         out["all_games"] = {"markets": len(feed.markets), "reads": feed.reads, "rows": feed.rows,
                             "inplay_markets_recorded": feed.inplay_recorded,
                             "paper_lines": len(feed.paper.lines), "betfair_requests": throttle.report()}
+    if b2l is not None:
+        out["b2l"] = {"backs": sum(1 for r in b2l.log if r["kind"] == "back" and r.get("status") == "SUCCESS"),
+                      "lays": sum(1 for r in b2l.log if r["kind"] == "lay" and r.get("status") == "SUCCESS"),
+                      "spent": b2l.spent}
     log.info("football: %s", out)
     return out
 
