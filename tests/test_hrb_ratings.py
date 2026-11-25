@@ -135,3 +135,17 @@ def test_fetch_skips_what_the_store_holds(tmp_path, monkeypatch):
     st = hrb_ratings.fetch_range([269], date(2026, 11, 1), date(2026, 11, 2), tmp_path, spacing=0, user_id="u",
                                  store=Store(), session=object())
     assert calls == [(269, date(2026, 11, 2))] and st["skipped"] == 1 and Store.put_names == ["ratings_269_2026-11-02.csv"]
+
+
+def test_the_rating_set_job_takes_at_most_12_downloads_a_day():
+    """The owner, 25 Nov 2026: "12 downoads per day" (HRB paused the account on 18 Nov after 94 downloads)."""
+    from pathlib import Path
+    import yaml
+    wf = Path(__file__).resolve().parents[1] / ".github/workflows/hrb-ratings.yml"
+    text = wf.read_text()
+    doc = yaml.safe_load(text)
+    on = doc.get("on", doc.get(True))
+    assert len(on["schedule"]) == 1                       # once a day
+    assert on["workflow_dispatch"]["inputs"]["max_requests"]["default"] == "12"
+    assert "MAX: ${{ inputs.max_requests || '12' }}" in text
+    assert "(( MAX > 12 )) &&" in text and "MAX=12" in text
