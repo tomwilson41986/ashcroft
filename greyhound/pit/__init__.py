@@ -231,11 +231,20 @@ def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None,
             store.put(f"{STORE_PREFIX}/{name}.meta.json", json.dumps(meta, indent=1, default=str).encode())
         metas[name] = meta
         _log_table(name, meta["seconds"])
+        later = order[order.index(name) + 1:]
         if keep and cut is not None:
-            later = order[order.index(name) + 1:]
             for done in [t for t in metas if t not in kept]:
                 if not any(done in DEPENDS.get(t, ()) for t in later):
                     kept[done] = ctx.pop(done).merge(cut, on=KEY)
+            gc.collect()
+        elif not keep:
+            # the nightly build (written to the store, nothing returned but the metas): each whole table is let go as
+            # soon as no later table reads it (``DEPENDS``). Until 26 Nov 2026 every table from 2014 stayed in ``ctx``
+            # to the end; as tables were added the build outgrew the runner's 16 GB and every scheduled night from
+            # 19 Nov lost its runner part-way (greyhound-pit.yml run 45563302345: after the cells table, 15.1 GB)
+            for done in [t for t in metas if t in ctx]:
+                if not any(done in DEPENDS.get(t, ()) for t in later):
+                    del ctx[done]
             gc.collect()
     if keep and cut is not None:
         return kept
