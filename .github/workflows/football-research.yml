@@ -47,6 +47,8 @@ on:
           - warehouse_models
           - team_news
           - today
+          - news_timing
+          - sportmonks_lineup_timing
       days:
         description: 'days of the live record to read'
         required: false
@@ -117,6 +119,16 @@ jobs:
         run: |
           mkdir -p out
           python -m football.today --day "$(TZ=Europe/London date +%F)" --out out/football_today.json --md out/football_today.md
+      - name: When team news arrives and when the price takes it in (descriptive; nothing traded)
+        if: inputs.job == 'news_timing'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_news_timing --days "$DAYS" --out out/news_timing.json --md out/news_timing.md
+      - name: When Sportmonks holds the elevens, against API-Football (polls every minute to 20:05 UTC; read-only)
+        if: inputs.job == 'sportmonks_lineup_timing'
+        env:
+          SPORTMONKS_API_TOKEN: ${{ secrets.SPORTMONKS_API_TOKEN }}
+        run: timeout 235m python -m research.open_close.football_sportmonks_lineup_timing --until 20:05 --out out/sm_lineup_timing.json
       - name: Team news for a day's matches (injuries, replacements, win probabilities; nothing is traded)
         if: inputs.job == 'team_news'
         run: |

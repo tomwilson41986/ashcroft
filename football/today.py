@@ -40,6 +40,8 @@ def b2l_day(store, day: str) -> dict:
     out["no_forecast_why"] = dec.loc[dec.get("outcome", pd.Series(index=dec.index, dtype=object)).notna(),
                                      "outcome"].value_counts().to_dict() if "outcome" in dec else {}
     if len(fc):
+        keep = [c for c in ("at", "event", "cp_min", "role", "selection_id", "forecast", "cell", "mode") if c in fc]
+        out["forecasts_list"] = fc.sort_values("forecast", ascending=False)[keep].to_dict("records")
         out["forecast_quantiles"] = {q: round(float(fc["forecast"].quantile(q)), 4) for q in (0.5, 0.9, 0.99)}
         out["by_checkpoint"] = fc.groupby("cp_min").size().to_dict()
     tr = d[d["kind"].isin(["back", "lay"])] if "kind" in d else d.iloc[:0]
