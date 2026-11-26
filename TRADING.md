@@ -2021,6 +2021,18 @@ the market-rating blend.
 - **gate_stn against gate_st:** mean |log ratio| 0.069, largest 0.314 (ledger `shadow-1124`).
 - **The record (the horse trader):** 46 days, +GBP6,886.06, 35 up.
 
+**The fifty-sixth full day** (25 Nov, a Wednesday; ledger `live-day-1125`), the fourth priced by gate_stn and the
+first on the execution fixes of 24 Nov (PR #501: no unknown order state, no kill-switch warning).
+- **+GBP93.05 after commission** on 404 fills on 128 horses, GBP2,253.27 matched, 34 races, CLV +6.06% (first backs
+  +9.2%, top-ups +4.8%); 8 backs refused EXPIRED. The cap of 3 top-ups held (78 horses at 4 fills, none over).
+- **The account.** Funds GBP5,441.65 -> GBP6,159.88 (+GBP718.23): the horse trader +GBP93.05 and the greyhound lay at
+  the SP +GBP625.19 (160 lays), 1p apart. So the GBP1,300.06 that left on 24 Nov was no trader's: a non-trading
+  movement (ledger `account-day-1125`).
+- **gate_stn against the BSP** (HRB results back to 24 Nov): 0.4046 on 22-25 Nov against the stack blend's 0.3791 on
+  15-21 Nov (other days and cards); its shadow gate_st 0.0014 closer on the same runners over 21-25 Nov (0.0004 to
+  0.0029; ledger `model-error-stn-1125`). The shadow runs to 5 Dec.
+- **The record (the horse trader):** 47 days, +GBP6,979.11, 36 up.
+
 **21 Nov: gate_stn served from 22 Nov** (ledger `serve-stn-1121`). The owner, 21 Nov: "Serve the Phase 6 result."
 From the 03:00 UTC predictions of 22 Nov the served blend is the stack blend with collateral, future_form and
 nbl_rating in all three members (bfsp-model-72/73/71, 1,263 features, trained through 16 Nov, the gate unchanged).
