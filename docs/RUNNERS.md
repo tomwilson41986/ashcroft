@@ -18,6 +18,7 @@ The guard tests fail if anything but horse racing runs on the live runner, or a 
 | `football` | `football-trade.yml` | 05:40 UTC for 23.5 h: all football. The trader, every Betfair match recorded and paper-traded, the football book records, the line-ups collector | live for the trader only, with `FOOTBALL_LIVE=yes`; delayed for the rest |
 | `paper-models` | `paper-models.yml`, `greyhound-prices.yml` | greyhounds. By day (05:45 UTC to 21:30 UK): the paper trader, book recorders, early lay and the racing census. By night (22:35 to 05:15 UTC): Betfair's greyhound price files | live for the greyhound trader and book recorder; delayed for the rest |
 | `data` | `other-data.yml` | 22:30 UTC nightly, about 75 minutes: every sport's market census, tennis odds, Betfair Historic Data | delayed |
+| `streams` (its own machine) | `sports-stream.yml` | by hand for now (a schedule once Betfair confirms the key's limits): every sport's main market (MATCH_ODDS, WIN, MONEY_LINE) on the Exchange Stream, two hours before the start to the close | live, read-only (no delayed key opens the stream) |
 
 ## Set up the three new runners (on the server, as the live runner's user)
 
@@ -56,6 +57,34 @@ The guard tests fail if anything but horse racing runs on the live runner, or a 
   `self-hosted`, a new runner with the default labels could otherwise take the live horse trader's job.
 - **No shared runner.** Each workflow stops if its label is the same as the live runner's. `football-trade.yml` also
   stops if its label is the same as the paper models' runner.
+
+## The all-sports stream recorder (its own machine)
+
+`sports-stream.yml` records the main market of every event in every sport from Betfair's Exchange Stream
+(`allsports/stream.py`). It is meant for a new machine, not the UK server: it is the biggest writer of all the jobs,
+and the live trader must not share its disk or bandwidth. The machine must be one Betfair accepts logins from.
+
+Under Betfair's limits:
+- at most 190 markets a connection (Betfair's default subscription limit is 200);
+- at most `vars.STREAM_CONNECTIONS` connections (default 2), so the horse and greyhound streams on the same key keep
+  room. Raise it only once Betfair has confirmed the key's connection and subscription limits;
+- markets wanted beyond that are left out, the furthest from their start first, and counted (`left_out` in
+  `betfair_live/<day>/status_sports_stream.json`).
+
+The sizing comes from `allsports/census.py`, nightly in `other-data.yml`: every market of the next 24 hours with its
+start time, and the most open at once per sport (`betfair_live/<day>/census_streams.json`). How long a market stays
+open after its start is assumed per sport (`LIVE_MINUTES`) until the recorder's own closing times replace it.
+
+Set up (a UK machine, x86_64 Ubuntu; e.g. AWS eu-west-2 t3.small, 30 GB disk, SSH open to your own IP only):
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/tomwilson41986/ashcroft/claude/scrape-horse-racing-results-vaHKc/scripts/setup_stream_machine.sh
+bash setup_stream_machine.sh
+```
+
+It installs the packages, sets the clock to UTC, adds swap, checks Betfair answers from the machine and registers two
+runners, `streams` and `data` (the nightly census has had no runner since 3 Nov). Then **Actions > Every sport's main
+markets on the Exchange Stream > Run workflow**, hours 0.25 for a first test.
 
 ## Real football stakes
 
