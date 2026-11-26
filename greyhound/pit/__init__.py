@@ -176,6 +176,48 @@ DEPENDS = {"trouble": ("ability",), "dyad": ("xtime",), "ext": ("xtime",), "fitn
            "line2": ("line", "xtime", "ext"), "sim2": ("trials",), "cardread": ("xtime",)}
 
 
+def build_groups(names, n: int, seconds: dict | None = None) -> list[list[str]]:
+    """``names`` split into at most ``n`` groups, each built by its own job (greyhound-pit.yml, 26 Nov 2026: one job
+    building every table from 2014 outgrew the runner's memory). A table and the tables it reads from ``ctx``
+    (``DEPENDS``) stay in one group; the groups are balanced by each table's last build time in seconds (``seconds``,
+    60 where unknown), heaviest first; each group in ``TABLES`` order."""
+    wanted = set(names)
+    order = [t for t in TABLES if t in wanted]
+    parent = {t: t for t in order}
+
+    def find(t):
+        while parent[t] != t:
+            parent[t] = parent[parent[t]]
+            t = parent[t]
+        return t
+    for t in order:
+        for d in DEPENDS.get(t, ()):
+            if d in parent:
+                parent[find(t)] = find(d)
+    comps: dict = {}
+    for t in order:
+        comps.setdefault(find(t), []).append(t)
+
+    def weight(ts):
+        return sum(float((seconds or {}).get(t) or 60) for t in ts)
+    bins: list[list[str]] = [[] for _ in range(max(1, min(int(n), len(comps))))]
+    for comp in sorted(comps.values(), key=weight, reverse=True):
+        min(bins, key=weight).extend(comp)
+    return [[t for t in order if t in set(b)] for b in bins if b]
+
+
+def stored_seconds(store, names) -> dict:
+    """Each table's build time in seconds as its stored meta last recorded it (``build_groups``' weights)."""
+    out = {}
+    for n in names:
+        try:
+            raw = store.get(f"{STORE_PREFIX}/{n}.meta.json")
+            out[n] = json.loads(raw).get("seconds") if raw else None
+        except Exception:                                   # a meta that cannot be read weighs the default
+            out[n] = None
+    return out
+
+
 def stored_fits(store, names) -> dict:
     """Each named table's stored notes (its fitted constants), where the stored table was built by this code (its
     meta's ``hash`` equals ``code_hash``): what a card build reads instead of fitting again (``ctx["fitted"]``)."""

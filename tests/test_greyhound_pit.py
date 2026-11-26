@@ -446,3 +446,19 @@ def test_the_nightly_build_lets_each_table_go_once_no_later_table_reads_it(tmp_p
     assert set(metas) == {"ability", "trouble", "connections"}
     for n in metas:
         assert store.get_parquet(f"{pit.STORE_PREFIX}/{n}.parquet") is not None
+
+
+def test_the_nightly_groups_keep_each_table_with_what_it_reads_and_cover_every_table():
+    names = [t for t in pit.TABLES if t not in pit.ON_DEMAND]
+    secs = {"ability": 563, "form": 356, "xtime": 283, "figs": 257}
+    groups = pit.build_groups(names, 4, secs)
+    assert len(groups) == 4
+    assert sorted(t for g in groups for t in g) == sorted(names)              # every table once
+    where = {t: i for i, g in enumerate(groups) for t in g}
+    for t in names:
+        for d in pit.DEPENDS.get(t, ()):
+            if d in where:
+                assert where[t] == where[d]                                # trouble with ability, dyad with xtime
+    for g in groups:
+        assert g == [t for t in pit.TABLES if t in g]                      # each in build order
+    assert pit.build_groups(["ability", "trouble"], 4) == [["ability", "trouble"]]

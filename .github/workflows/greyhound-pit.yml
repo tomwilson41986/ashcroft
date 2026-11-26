@@ -29,9 +29,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  # 26 Nov 2026: one job building every table from 2014 lost its runner every scheduled night from 19 Nov (memory: run
+  # 45563302345 died after the cells table at 15.1 GB; 45775071792, with each table freed once no later table reads
+  # it, still lost its runner 85 minutes in). The tables are split into groups (greyhound/pit build_groups: a table
+  # and the tables it reads together, balanced by their last build times), each built by its own job with the price
+  # run's 32 GB of swap (greyhound-live.yml); each table is written to the store as it is built.
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 30
+    outputs:
+      groups: ${{ steps.plan.outputs.groups }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -46,30 +53,7 @@ jobs:
           python-version: '3.11'
           cache: pip
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          # the seq table (greyhound/pit/seq.py: a GRU refitted monthly) is built by name only, never in 'all'
-          if [[ "$TABLES" == "all" || ",$TABLES," == *",seq,"* ]]; then pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu; fi
-      - name: Free disk space
-        # GitHub's ubuntu-26.04 runners keep /mnt on the root disk: the swap file left no room and the job died
-        # with "No space left on device" (greyhound-live.yml run 43386968806, 13 Nov 2026). Unused tool caches go first.
-        continue-on-error: true
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
-          df -h / | tail -1; free -g | sed -n 2,3p
-      - name: Add swap
-        continue-on-error: true
-        run: |
-          # 12 Nov 2026: from about 16:00 UTC hosted jobs died in this step with no log (the runner lost while the
-          # swap it already had was turned off and a 16G file written). Now the runner's own swap is left alone and
-          # a second, smaller file is added beside it only where the disk has the room; never fatal
-          free -g | sed -n 1,3p; df -h /mnt | tail -1
-          AVAIL=$(df --output=avail -BG /mnt | tail -1 | tr -dc 0-9)
-          if [ "${AVAIL:-0}" -ge 20 ] && [ ! -e /mnt/swapfile_extra ]; then
-            (sudo fallocate -l 8G /mnt/swapfile_extra && sudo chmod 600 /mnt/swapfile_extra && sudo mkswap /mnt/swapfile_extra >/dev/null && sudo swapon /mnt/swapfile_extra) || true
-          fi
-          sudo swapon --show || true
-          free -h
+        run: pip install -r requirements.txt
       - name: Weather (NOAA ISD-Lite, public domain)
         continue-on-error: true
         run: |
@@ -78,22 +62,79 @@ jobs:
           else
             echo "no track reference table yet: the weather table is empty"
           fi
-      - name: Build the tables
+      - name: Plan the groups
+        id: plan
         run: |
           if ! [[ "$TABLES" =~ ^[a-z0-9_,]+$ ]]; then echo "tables must be names like ability,trouble2 or all"; exit 1; fi
+          G=$(python -m greyhound.pit --build "$TABLES" --groups 4 | tail -1)
+          echo "groups: $G"
+          echo "groups=$G" >> "$GITHUB_OUTPUT"
+          python -m greyhound.pit --registry
+      - uses: actions/upload-artifact@v4
+        with:
+          name: greyhound-pit-registry-${{ github.run_number }}
+          path: reports/greyhound_metrics_registry.md
+          if-no-files-found: ignore
+          retention-days: 30
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        tables: ${{ fromJSON(needs.plan.outputs.groups) }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+      CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+      TABLES: ${{ matrix.tables }}
+      FIRST_YEAR: ${{ inputs.first_year || '2014' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          # the seq table (greyhound/pit/seq.py: a GRU refitted monthly) needs torch
+          if [[ ",$TABLES," == *",seq,"* ]]; then pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu; fi
+      - name: Free disk space
+        # GitHub's ubuntu-26.04 runners keep /mnt on the root disk: the swap file left no room and the job died
+        # with "No space left on device" (greyhound-live.yml run 43386968806, 13 Nov 2026). Unused tool caches go first.
+        continue-on-error: true
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h / | tail -1; free -g | sed -n 2,3p
+      - name: Add swap
+        # 32 GB, as the hourly price run has had since 15 Nov 2026 (greyhound-live.yml), which builds the same tables
+        # for the card every hour without losing its runner
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 32G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          free -h
+      - name: Build the tables
+        run: |
+          if ! [[ "$TABLES" =~ ^[a-z0-9_,]+$ ]]; then echo "tables must be names like ability,trouble2"; exit 1; fi
           if ! [[ "$FIRST_YEAR" =~ ^20[0-9]{2}$ ]]; then echo "first_year must be a year"; exit 1; fi
           # memory and swap every 60 s in the log (26 Nov 2026: seven nights lost their runner with no reading of swap)
           ( while true; do echo "[mem $(date -u +%H:%M:%S)] $(free -m | awk 'NR==2{printf "used %s avail %s ", $3, $7} NR==3{printf "swap %s", $3}')"; sleep 60; done ) &
           MEMPID=$!; trap 'kill $MEMPID 2>/dev/null || true' EXIT
           python -m greyhound.pit --build "$TABLES" --first-year "$FIRST_YEAR" --out out/pit
-          python -m greyhound.pit --registry
           cat out/pit/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Artifact name
+        if: always()
+        id: name
+        run: echo "name=$(echo "$TABLES" | cut -d, -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: greyhound-pit-${{ github.run_number }}
-          path: |
-            out/pit/
-            reports/greyhound_metrics_registry.md
+          name: greyhound-pit-${{ github.run_number }}-${{ steps.name.outputs.name }}
+          path: out/pit/
           if-no-files-found: ignore
           retention-days: 30
