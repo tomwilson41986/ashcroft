@@ -124,11 +124,11 @@ jobs:
         env:
           DAYS: ${{ inputs.days }}
         run: python -m research.open_close.football_news_timing --days "$DAYS" --out out/news_timing.json --md out/news_timing.md
-      - name: When Sportmonks holds the elevens, against API-Football (polls every minute to 20:05 UTC; read-only)
+      - name: When Sportmonks holds the elevens, against API-Football (polls every minute for 225 minutes; read-only)
         if: inputs.job == 'sportmonks_lineup_timing'
         env:
           SPORTMONKS_API_TOKEN: ${{ secrets.SPORTMONKS_API_TOKEN }}
-        run: timeout 235m python -m research.open_close.football_sportmonks_lineup_timing --until 20:05 --out out/sm_lineup_timing.json
+        run: timeout 232m python -m research.open_close.football_sportmonks_lineup_timing --until "$(date -u -d '+225 min' +%H:%M)" --out out/sm_lineup_timing.json
       - name: Team news for a day's matches (injuries, replacements, win probabilities; nothing is traded)
         if: inputs.job == 'team_news'
         run: |
