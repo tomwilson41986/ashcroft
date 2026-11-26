@@ -11,9 +11,10 @@ Collect (one process for the UK day, football-trade.yml):
   divisions (football.reference COMPETITIONS, their API-Football league ids);
 - each match not yet started is polled from ``LEAD_MIN`` minutes before kick-off, in batches of up to 20
   (``/fixtures?ids=a-b-...``, which carries the line-ups), every ``EVERY_MIN`` minutes until both starting elevens
-  are out; then once more from ``CONFIRM_MIN`` minutes before kick-off, to catch a late change;
+  are out (every ``EARLY_EVERY_MIN`` minutes until ``PEAK_FROM_MIN`` before kick-off, then every ``EVERY_MIN``);
+  then once more from ``CONFIRM_MIN`` minutes before kick-off, to catch a late change;
 - the day's injuries (``/injuries?date=<UK day>``, every league in one call) at the start and every ``INJURY_EVERY_H``
-  hours.
+  hours; the next ``INJURY_AHEAD_DAYS`` days' every ``INJURY_AHEAD_EVERY_H`` hours, kept under each match day.
 
 Every reply is kept as it came (bronze), wrapped with the UTC time it was fetched and the call:
 ``api_football/raw/lineups/<day>/<stamp>_<n>.json.gz``, ``.../raw/day_fixtures/<day>/...``,
@@ -62,11 +63,16 @@ log = logging.getLogger(__name__)
 API = "https://v3.football.api-sports.io"
 UK = ZoneInfo("Europe/London")
 PREFIX = "api_football"
-LEAD_MIN = 75.0          # start polling a match this long before kick-off (line-ups are due about an hour before)
-EVERY_MIN = 2.0          # between polls of a match whose line-up is not yet out
+LEAD_MIN = 75.0          # start polling a match this long before kick-off (team sheets are due 60-75 minutes before)
+EARLY_EVERY_MIN = 15.0   # between polls before PEAK_FROM_MIN: a probe in case the feed has the elevens early
+PEAK_FROM_MIN = 35.0     # API-Football holds both elevens about 28 minutes before kick-off (news timing, 26 Nov 2026:
+                         # 389 matches, 10th-90th percentile 27.7-28.6), so poll every minute from here
+EVERY_MIN = 1.0          # between polls from PEAK_FROM_MIN of a match whose line-up is not yet out
 CONFIRM_MIN = 10.0       # the confirming poll, this long before kick-off
 FIXTURES_EVERY_MIN = 60.0
 INJURY_EVERY_H = 3.0
+INJURY_AHEAD_DAYS = 3    # also the next three days' injuries (the price moves most 72-6 hours out: news timing, 26 Nov)
+INJURY_AHEAD_EVERY_H = 12.0
 BATCH = 20               # the most ids /fixtures?ids= takes
 QUOTA_STOP = 100
 MAX_FAILURES = 60        # failed loop steps (30 s apart) before the day's loop gives up
@@ -145,6 +151,8 @@ class Collector:
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     lead_min: float = LEAD_MIN
     every_min: float = EVERY_MIN
+    early_every_min: float = EARLY_EVERY_MIN
+    peak_from_min: float = PEAK_FROM_MIN
     confirm_min: float = CONFIRM_MIN
     quota_stop: int = QUOTA_STOP
     matches: dict[int, Match] = field(default_factory=dict)
@@ -154,7 +162,7 @@ class Collector:
     rate_limited: int = 0
     _n: int = 0
 
-    def _call(self, kind: str, path: str, params: dict) -> dict | None:
+    def _call(self, kind: str, path: str, params: dict, folder: str | None = None) -> dict | None:
         """One request, its reply kept raw with its fetch time; None (and the loop stopped) on an error reply or
         once the plan's remaining requests reach ``quota_stop``."""
         if self.quota_left is not None and self.quota_left <= self.quota_stop:
@@ -169,7 +177,7 @@ class Collector:
             return None
         self._n += 1
         doc = {"fetched_utc": t.isoformat(), "path": path, "params": params, "body": body}
-        self.store.put(f"{PREFIX}/raw/{kind}/{self.day}/{_stamp(t)}_{self._n}.json.gz",
+        self.store.put(f"{PREFIX}/raw/{kind}/{folder or self.day}/{_stamp(t)}_{self._n}.json.gz",
                        gz(json.dumps(doc).encode()))
         if body.get("errors"):
             err = str(body["errors"])[:200]
@@ -214,7 +222,8 @@ class Collector:
             if m.status not in NOT_STARTED or mins < 0 or mins > self.lead_min:
                 continue
             since = None if m.last_poll is None else (t - m.last_poll).total_seconds() / 60.0
-            if since is not None and since < self.every_min:
+            gap = self.early_every_min if mins > self.peak_from_min else self.every_min
+            if since is not None and since < gap:
                 continue
             if m.seen_at is None or (not m.confirmed and mins <= self.confirm_min):
                 out.append(m.fixture_id)
@@ -253,6 +262,17 @@ class Collector:
         body = self._call("injuries", "injuries", {"date": self.day})
         return 0 if body is None else int(body.get("results") or 0)
 
+    def injuries_ahead(self, days: int = INJURY_AHEAD_DAYS) -> int:
+        """The next ``days`` days' injuries, each kept under its match day's folder (raw/injuries/<that day>/), so a
+        match's list is seen from three days out, not only on the day."""
+        n = 0
+        base = datetime.fromisoformat(self.day).date()
+        for k in range(1, days + 1):
+            d = (base + timedelta(days=k)).isoformat()
+            body = self._call("injuries", "injuries", {"date": d}, folder=d)
+            n += 0 if body is None else int(body.get("results") or 0)
+        return n
+
     def summary(self) -> dict:
         ms = list(self.matches.values())
         return {"day": self.day, "matches": len(ms), "lineups_seen": sum(m.seen_at is not None for m in ms),
@@ -267,7 +287,7 @@ def collect(store: Store, fetch: Fetch, until: str, leagues: set[int] | None = N
     day = now().astimezone(UK).date().isoformat()
     c = Collector(store, fetch, day, leagues or lineup_league_ids(), now=now)
     end_h, end_m = (int(x) for x in until.split(":"))
-    last_fix = last_inj = None
+    last_fix = last_inj = last_ahead = None
     failures = 0
     while c.stopped is None:
         t = now()
@@ -282,6 +302,9 @@ def collect(store: Store, fetch: Fetch, until: str, leagues: set[int] | None = N
             if last_inj is None or (t - last_inj) >= timedelta(hours=INJURY_EVERY_H):
                 c.injuries()
                 last_inj = t
+            if last_ahead is None or (t - last_ahead) >= timedelta(hours=INJURY_AHEAD_EVERY_H):
+                c.injuries_ahead()
+                last_ahead = t
             ids = c.due()
             if ids:
                 c.poll(ids)

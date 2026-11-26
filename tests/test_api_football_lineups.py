@@ -84,8 +84,10 @@ def test_polling_starts_at_the_lead_and_records_the_first_sight(tmp_path):
     clock.t += timedelta(minutes=1)
     assert c.due() == []                                        # polled a minute ago
     clock.t = KO - timedelta(minutes=59)
+    assert c.due() == []                                        # before T-35: a probe every 15 minutes only
+    clock.t = KO - timedelta(minutes=55)
     assert c.poll(c.due()) == 3
-    assert all(m.seen_at == KO - timedelta(minutes=59) for m in c.matches.values())
+    assert all(m.seen_at == KO - timedelta(minutes=55) for m in c.matches.values())
     clock.t = KO - timedelta(minutes=30)
     assert c.due() == []                                        # seen; the confirming poll waits for T-10
     clock.t = KO - timedelta(minutes=9)
@@ -124,8 +126,8 @@ def test_build_times_players_and_injuries(tmp_path):
     c.refresh_fixtures()
     c.injuries()
     c.poll(c.due())                                             # T-70: nothing
-    clock.t = KO - timedelta(minutes=58)
-    c.poll(c.due())                                             # T-58: both out
+    clock.t = KO - timedelta(minutes=55)
+    c.poll(c.due())                                             # T-55: both out
     clock.t = KO - timedelta(minutes=8)
     c.poll(c.due())                                             # T-8: confirmed
     rep = al.build(Store(root=tmp_path), {LEAGUE})
@@ -135,9 +137,9 @@ def test_build_times_players_and_injuries(tmp_path):
     assert rep["injury_rows_in"] == 2 and rep["injury_rows_out"] == 1          # the other league's dropped
     t = pd.read_parquet(tmp_path / "api_football/lineup_times.parquet")
     r = t[t.apif_fixture_id == 1].iloc[0]
-    assert r.first_seen_utc == pd.Timestamp(KO - timedelta(minutes=58))
+    assert r.first_seen_utc == pd.Timestamp(KO - timedelta(minutes=55))
     assert r.last_unseen_utc == pd.Timestamp(KO - timedelta(minutes=70))
-    assert r.minutes_before_ko == 58 and r.polls == 3
+    assert r.minutes_before_ko == 55 and r.polls == 3
     inj = pd.read_parquet(tmp_path / "api_football/injuries.parquet")
     assert inj.iloc[0]["reason"] == "Knee Injury"
 
@@ -176,5 +178,32 @@ def test_a_rate_limit_reply_does_not_end_the_day(tmp_path):
     c.fetch = limited
     c.poll(c.due())                                             # the limited reply: nothing seen, not stopped
     assert c.stopped is None and c.rate_limited == 1
-    clock.t = KO - timedelta(minutes=58)
+    clock.t = KO - timedelta(minutes=55)
     assert c.poll(c.due()) == 3                                 # and the next poll works
+
+
+def test_every_minute_from_t35_until_the_elevens_are_out(tmp_path):
+    clock = Clock(KO - timedelta(minutes=36))
+    api = Api(clock, out_at=KO - timedelta(minutes=28))
+    c = collector(tmp_path, clock, api)
+    c.refresh_fixtures()
+    c.poll(c.due())                                             # T-36: a probe
+    clock.t = KO - timedelta(minutes=35.5)
+    assert c.due() == []                                        # before T-35: the 15-minute gap still holds
+    clock.t = KO - timedelta(minutes=34)
+    assert c.poll(c.due()) == 0
+    for m in range(33, 27, -1):                                 # every minute to T-28
+        clock.t = KO - timedelta(minutes=m)
+        got = c.poll(c.due())
+    assert got == 3 and all(x.seen_at == KO - timedelta(minutes=28) for x in c.matches.values())
+
+
+def test_the_next_three_days_injuries_are_kept_under_their_match_days(tmp_path):
+    clock = Clock(KO - timedelta(hours=8))
+    api = Api(clock)
+    c = collector(tmp_path, clock, api)
+    c.injuries_ahead()
+    dates = [p["date"] for path, p in api.calls if path == "injuries"]
+    assert dates == ["2026-11-08", "2026-11-09", "2026-11-10"]
+    for d in dates:
+        assert list((tmp_path / "api_football" / "raw" / "injuries" / d).glob("*.json.gz"))
