@@ -136,3 +136,44 @@ def test_the_model_is_read_again_hourly_so_a_refit_after_the_start_is_picked_up(
     t[0] += bt.RELOAD_SECONDS
     x.load("2026-11-26")
     assert x.model == {"v": 2} and len(calls) == 2
+
+
+def test_a_restarted_run_keeps_the_days_backs_lays_the_open_one_and_counts_the_spend(monkeypatch):
+    """A restart mid-day (26 Nov 2026) reads the day's trades: the open back is held for its lay, the laid one is not
+    laid again, the spend counts toward the day cap, a paper back is not laid by a live run, the log is kept."""
+    import json
+    from football import b2l
+    monkeypatch.setattr(b2l, "load", lambda store: {"m": 1})
+    day = "2026-11-26"
+    recs = [
+        {"kind": "back", "market_id": "1.1", "selection_id": 7, "mode": "live", "price": 3.0, "status": "SUCCESS",
+         "matched": 2.0, "avg_price": 3.0, "ref": "b2l-1.1-7-360"},
+        {"kind": "back", "market_id": "1.2", "selection_id": 8, "mode": "live", "price": 2.0, "status": "SUCCESS",
+         "matched": 2.0, "avg_price": 2.0, "ref": "b2l-1.2-8-360"},
+        {"kind": "lay", "market_id": "1.2", "selection_id": 8, "mode": "live", "price": 1.9, "size": 2.1,
+         "matched": 2.1, "status": "SUCCESS"},
+        {"kind": "back", "market_id": "1.3", "selection_id": 9, "mode": "paper", "price": 4.0, "status": "SUCCESS",
+         "matched": 2.0, "avg_price": 4.0, "ref": "b2l-1.3-9-15"},
+        {"kind": "decide", "market_id": "1.1", "selection_id": 7, "mode": "live"},
+    ]
+
+    class Store:
+        def __init__(self):
+            self.put_body = None
+
+        def get(self, key):
+            return ("\n".join(json.dumps(r) for r in recs) + "\n").encode() if key.endswith(f"{day}.jsonl") else None
+
+        def put(self, key, body):
+            self.put_body = body
+    st = Store()
+    x = bt.B2L(None, st, "live", lambda: False)
+    x.load(day)
+    assert x.backed[("1.1", 7)]["lay"] is None                      # open: laid at its close
+    assert isinstance(x.backed[("1.2", 8)]["lay"], dict)             # laid already
+    assert ("1.3", 9) not in x.backed                                # paper, not this run's
+    assert x.spent[day] == 4.0
+    x.save(day)
+    assert st.put_body.decode().count("\n") == len(recs)             # the log kept, not overwritten
+    x.load(day)                                                      # the same day again: not restored twice
+    assert x.spent[day] == 4.0 and len(x.log) == len(recs)

@@ -156,12 +156,44 @@ class B2L:
         if self.loaded_day == day and self.model is not None and mono - self.loaded_at < RELOAD_SECONDS:
             return
         self.loaded_at = mono
+        if self.loaded_day != day:
+            self.restore(day)
         from football import b2l
         self.model = b2l.load(self.store) or self.model
         raw = self.store.get(b2l.MEMORY_KEY) if self.store is not None else None
         if raw:
             self.memory = pd.read_parquet(io.BytesIO(raw))
         self.loaded_day = day
+
+    def restore(self, day: str) -> None:
+        """The day's trades already written (a restarted run, 26 Nov 2026): the log kept, the stake spent counted, and
+        each back of this mode held, so a back still open is laid at its close and no runner is backed twice. A back
+        of the other mode (paper before a live restart) is kept in the log only."""
+        if self.store is None or day in self.spent:
+            return
+        try:
+            raw = self.store.get(f"{TRADES_PREFIX}/{day}.jsonl")
+        except Exception as exc:                                              # a read failure: start the day afresh
+            log.warning("b2l trades not read (%s)", exc)
+            return
+        if not raw:
+            return
+        recs = [json.loads(x) for x in raw.decode().splitlines() if x.strip()]
+        self.log = recs + self.log
+        for r in recs:
+            if r.get("mode") != self.mode or r.get("kind") not in ("back", "lay"):
+                continue
+            key = (str(r["market_id"]), int(r["selection_id"]))
+            if r["kind"] == "back" and "status" in r:
+                self.spent[day] = self.spent.get(day, 0.0) + (STAKE if r["status"] == "SUCCESS" else 0.0)
+                matched = float(r.get("matched") or 0.0)
+                self.backed[key] = {"price": r.get("price"), "matched": matched, "avg": r.get("avg_price") or r.get("price"),
+                                    "status": r["status"], "ref": r.get("ref"), "lay": None if matched > 0 else "not needed"}
+            elif r["kind"] == "lay" and key in self.backed:
+                self.backed[key]["lay"] = {k: r.get(k) for k in ("price", "size", "matched", "status")} \
+                    if "status" in r else r.get("outcome", "laid")
+        self.spent.setdefault(day, 0.0)
+        log.info("b2l restored %d records, %d backs, GBP %.0f spent", len(recs), len(self.backed), self.spent[day])
 
     def observe(self, rows: list[dict]) -> None:
         for r in rows:
