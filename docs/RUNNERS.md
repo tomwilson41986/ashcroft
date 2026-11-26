@@ -75,8 +75,16 @@ The sizing comes from `allsports/census.py`, nightly in `other-data.yml`: every 
 start time, and the most open at once per sport (`betfair_live/<day>/census_streams.json`). How long a market stays
 open after its start is assumed per sport (`LIVE_MINUTES`) until the recorder's own closing times replace it.
 
-Set up: on the new machine, `bash ~/setup_runner.sh streams`; then **Actions > Every sport's main markets on the
-Exchange Stream > Run workflow**.
+Set up (a UK machine, x86_64 Ubuntu; e.g. AWS eu-west-2 t3.small, 30 GB disk, SSH open to your own IP only):
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/tomwilson41986/ashcroft/claude/scrape-horse-racing-results-vaHKc/scripts/setup_stream_machine.sh
+bash setup_stream_machine.sh
+```
+
+It installs the packages, sets the clock to UTC, adds swap, checks Betfair answers from the machine and registers two
+runners, `streams` and `data` (the nightly census has had no runner since 3 Nov). Then **Actions > Every sport's main
+markets on the Exchange Stream > Run workflow**, hours 0.25 for a first test.
 
 ## Real football stakes
 

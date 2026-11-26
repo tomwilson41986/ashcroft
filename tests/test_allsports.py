@@ -262,3 +262,11 @@ def test_the_workflow_records_on_its_own_runner_by_hand_only():
     py = [ln for ln in code if "python" in ln and "pip" not in ln and "venv" not in ln and "sys.version" not in ln]
     assert len(py) == 1 and "-m allsports.stream" in py[0] and '"$BETFAIR_LIVE_APP_KEY"' in py[0]
     assert "STREAM_CONNECTIONS" in str(job)
+
+
+def test_the_machine_setup_registers_its_two_runners_and_holds_no_secret():
+    text = (ROOT / "scripts" / "setup_stream_machine.sh").read_text()
+    assert 'LABELS="${LABELS:-streams data}"' in text and 'bash "$HOME/setup_runner.sh" "$label"' in text
+    assert "stream-api.betfair.com" in text and "set-timezone UTC" in text
+    for word in ("BETFAIR_PASSWORD", "AWS_SECRET", "APP_KEY", "auto_trade", "--trade"):
+        assert word not in text, word
