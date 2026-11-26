@@ -155,6 +155,13 @@ python research/queries/done/expert_fee_projection_1109.py
 # read-only, beside the trader in live-trade.yml to 21:30 UK (the last race, the owner, 11 Nov) on the live key (the owner, 10 Nov 2026: no delayed key
 # opens the stream), to s3://$CAPTURE_BUCKET/betfair_stream/horse/<day>/
 BETFAIR_APP_KEY=<live key> python -m research.horse_stream_record --until 21:30
+# Every sport (the owner, 26 Nov 2026: "record prices in depth ... for all sports", "stay under betfair limits"): every
+# market of the next 24 h with its start time and the most open at once (census, delayed key, other-data.yml nightly);
+# the main market of every event (MATCH_ODDS, WIN, MONEY_LINE) on the Exchange Stream, read-only, at most 190 markets a
+# connection and STREAM_CONNECTIONS connections (default 2), on its own machine (sports-stream.yml, by hand for now;
+# docs/RUNNERS.md), to s3://$CAPTURE_BUCKET/betfair_stream/sports/<day>/
+python -m allsports.census --hours 24
+BETFAIR_APP_KEY=<live key> python -m allsports.stream --hours 23.5 --connections 2
 
 # --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
 # Model-vs-market scoring (Murphy decomposition, skill vs BSP, concordance, drift)

@@ -1,0 +1,77 @@
+name: Every sport's main markets on the Exchange Stream (read-only)
+
+# The owner, 26 Nov 2026: "record prices in depth ... for all sports on betfair", "stay under betfair limits".
+# The main market of every event in every sport (MATCH_ODDS, WIN, MONEY_LINE), each from two hours before its start
+# until it closes, recorded raw from Betfair's Exchange Stream: the full ladder, the volume traded at each price, the
+# last traded price, the market's state (allsports/stream.py). Parts to s3://$CAPTURE_BUCKET/betfair_stream/sports/.
+#
+# Read-only: no order call exists in allsports/ and the order stream is never asked for. On the live key, because no
+# delayed key opens the stream. Under Betfair's limits: at most 190 markets a connection and vars.STREAM_CONNECTIONS
+# connections (default 2), the markets beyond that left out and counted in betfair_live/<day>/status_sports_stream.json.
+#
+# Its own runner (vars.STREAM_RUNNER, default 'streams'; scripts/setup_runner.sh streams), on its own machine
+# (docs/RUNNERS.md): never the horse, football, greyhound, data or morning runner. Started by hand until Betfair has
+# confirmed the key's connection and subscription limits; then a schedule goes here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: Hours to record
+        default: '23.5'
+      exclude_event_types:
+        description: Betfair event type ids to leave out, comma-separated (e.g. 7,4339)
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sports-stream
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ${{ vars.STREAM_RUNNER || 'streams' }}
+    timeout-minutes: 1440
+    steps:
+      - name: Not on another job's runner
+        env:
+          RUNNER_LABEL: ${{ vars.STREAM_RUNNER || 'streams' }}
+          OTHERS: "${{ vars.BETFAIR_RUNNER }} ${{ vars.FOOTBALL_RUNNER || 'football' }} ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }} ${{ vars.DATA_RUNNER || 'data' }} ${{ vars.MORNING_RUNNER || 'morning' }}"
+        run: |
+          for other in $OTHERS; do
+            if [ "$RUNNER_LABEL" = "$other" ]; then
+              echo "STREAM_RUNNER is another job's runner ($other): the stream recorder runs on its own"
+              exit 1
+            fi
+          done
+      - uses: actions/checkout@v4
+      - name: Python (its own environment)
+        run: |
+          VENV="$HOME/.venvs/ashcroft-streams"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv-streams"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: pip install -q -r requirements.txt
+      - name: Record (read-only)
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          STREAM_CONNECTIONS: ${{ vars.STREAM_CONNECTIONS || '2' }}
+          HOURS: ${{ inputs.hours }}
+          EXCLUDE: ${{ inputs.exclude_event_types }}
+        run: |
+          if [ -z "$BETFAIR_LIVE_APP_KEY" ]; then echo "no live key: the stream needs it"; exit 1; fi
+          LIMIT=$(awk -v h="$HOURS" 'BEGIN { printf "%d", h * 60 + 15 }')
+          BETFAIR_APP_KEY="$BETFAIR_LIVE_APP_KEY" timeout "${LIMIT}m" python -m allsports.stream --hours "$HOURS" --connections "$STREAM_CONNECTIONS" --exclude-event-types "$EXCLUDE"

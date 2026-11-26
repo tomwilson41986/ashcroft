@@ -169,14 +169,16 @@ def test_only_the_trader_runs_on_the_live_key():
     # greyhound-au-paper.yml (the owner, 17 Nov 2026: "Record the Australian books live for a paper test"): the
     # Australian greyhound book recorder alone, read-only (test_the_australian_paper_test_only_records below)
     assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml", "paper-models.yml",
-                     "morning-models.yml", "greyhound-au-paper.yml"}, named
+                     "morning-models.yml", "greyhound-au-paper.yml",
+                     "sports-stream.yml"}, named   # the owner, 26 Nov 2026: every sport's main markets, read-only
     # the greyhound stream recorder too (the owner, 5 Nov 2026, the audit C1): read-only, no order subscription; and
     # the horse WIN markets' stream beside the horse trader (the owner, 10 Nov 2026): read-only, no delayed key opens it
     traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade", "greyhound.book_record",
                "greyhound.stream_record", "research.horse_stream_record",
                "greyhound.early_lay --trade", "greyhound.quote_mid --trade", "greyhound.fav_back --trade",
                "greyhound.take_close --trade", "morning.live",
-               "greyhound.sp_lay --trade")                    # the owner, 21 Nov 2026: the residual's lay at the SP
+               "greyhound.sp_lay --trade",                    # the owner, 21 Nov 2026: the residual's lay at the SP
+               "allsports.stream")                            # the owner, 26 Nov 2026: read-only, no order route
     for name in named:
         text = (WORKFLOWS / name).read_text()
         for ln in text.splitlines():
@@ -361,10 +363,11 @@ def test_the_runner_setup_registers_only_its_own_label():
     live horse trader's runner label may be), for the two jobs that need one, from a checked download."""
     text = (Path(__file__).resolve().parents[1] / "scripts" / "setup_runner.sh").read_text()
     assert "--no-default-labels" in text and '--labels "$LABEL"' in text
-    assert "football|paper-models|data|morning) ;;" in text
+    assert "football|paper-models|data|morning|streams) ;;" in text
     assert "sha256sum -c -" in text and 'read -r -s -p "Registration token' in text
     for name, label in (("football-trade.yml", "'football'"), ("paper-models.yml", "'paper-models'"),
-                        ("other-data.yml", "'data'"), ("morning-models.yml", "'morning'")):
+                        ("other-data.yml", "'data'"), ("morning-models.yml", "'morning'"),
+                        ("sports-stream.yml", "'streams'")):
         assert label in (WORKFLOWS / name).read_text()
 
 
