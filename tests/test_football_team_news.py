@@ -58,3 +58,17 @@ def test_injuries_keep_the_latest_type_and_the_first_sighting():
                                                          "fixture": {"id": 5}, "team": {"id": 1}}]}}
     d = tn.injuries([doc("2026-11-26T06:00:00", "Questionable"), doc("2026-11-26T09:00:00", "Missing Fixture")])
     assert len(d) == 1 and d.iloc[0]["type"] == "Missing Fixture" and d.iloc[0]["first_seen_utc"].startswith("2026-11-26T06")
+
+
+def test_the_table_names_both_teams_the_absentee_and_his_replacement():
+    side = {"matches_read": 5, "lost_gd90": 0.15, "absentees": [
+        {"player": "P2", "type": "Missing Fixture", "reason": "Knee", "position": "D", "start_share": 1.0,
+         "rating": 0.2, "rated": True, "replacement": ["P12"], "replacement_rating": 0.05, "gd90_lost": 0.15}]}
+    res = {"day": "2026-11-26", "matches": [{"kickoff_utc": "2026-11-26 17:45:00+00:00", "league": "L",
+                                             "home_team": "Home FC", "away_team": "Away FC", "home": side,
+                                             "away": {"matches_read": 2, "absentees": [], "lost_gd90": 0.0},
+                                             "betfair": {"p_h": 0.5, "p_d": 0.27, "p_a": 0.23},
+                                             "impact": {"home_win_pp_lost_to_absences": 1.2,
+                                                        "away_win_pp_lost_to_absences": 0.0}}]}
+    md = tn.markdown(res)
+    assert "Home FC v Away FC" in md and "P2 (D, 100% starts) -> P12" in md and "no data found" in md

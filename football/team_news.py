@@ -151,9 +151,9 @@ def side_news(app: pd.DataFrame, team_id: int, before: pd.Timestamp, out: pd.Dat
         res["absentees"].append({"player": r.player, "type": r.type, "reason": r.reason, "position": pos.get(p),
                                  "start_share": round(s, 2), "rating": round(float(ratings.get(p, 0.0)), 4),
                                  "rated": p in ratings, "replacement": repl_names,
-                                 "replacement_rating": round(repl, 4), "gd90_lost": round(d, 4)})
+                                 "replacement_rating": round(repl, 4), "gd90_lost": round(float(d), 4)})
     res["absentees"].sort(key=lambda x: -abs(x["gd90_lost"]))
-    res["lost_gd90"] = round(lost, 4)
+    res["lost_gd90"] = round(float(lost), 4)
     return res
 
 
@@ -243,7 +243,8 @@ def run(store, day: str) -> dict:
             out = inj[(inj["apif_fixture_id"] == r.apif_fixture_id) & (inj["apif_team_id"] == tid)]
             sides[side] = side_news(app, tid, ko, out, ratings)
         rec = {"apif_fixture_id": int(r.apif_fixture_id), "kickoff_utc": str(r.kickoff_utc), "league": r.league,
-               "country": r.country, "home": r.home, "away": r.away, **sides}
+               "country": r.country, "home_team": r.home, "away_team": r.away, "home": sides["home"],
+               "away": sides["away"]}
         p = mkt[mkt["apif_fixture_id"] == r.apif_fixture_id] if len(mkt) else mkt
         if len(p):
             q = p.iloc[0]
@@ -260,29 +261,41 @@ def run(store, day: str) -> dict:
     return res
 
 
+def _who(side: dict, n: int = 4) -> str:
+    """The absentees who cost something, each with his likely replacement."""
+    out = []
+    for x in side.get("absentees", []):
+        if x["start_share"] <= 0:
+            continue
+        tag = "?" if x["type"] == "Questionable" else ""
+        repl = f" -> {x['replacement'][0]}" if x["replacement"] else " -> (none known)"
+        out.append(f"{x['player']}{tag} ({x['position']}, {x['start_share']:.0%} starts){repl}")
+    return "; ".join(out[:n]) or "none who start"
+
+
 def markdown(res: dict) -> str:
     lines = [f"# racing² football - team news, {res['day']}", "",
              f"Fixtures with injuries: {res.get('fixtures_with_injuries', 0)}; with a Betfair price: "
-             f"{res.get('with_betfair_price', 0)}; players rated: {res.get('players_rated', 0)}; history to "
+             f"{res.get('with_betfair_price', 0)}; players rated: {res.get('players_rated', 0)}; line-up history to "
              f"{res.get('history_last_match')}.", "",
-             "Source: API-Football injuries and line-ups, goals plus-minus ratings, the football feed's Betfair books "
-             "(`football/team_news.py`). Win-probability points are the model's: the market's goal rates with the "
-             "side's losses added back. The market already prices most announced injuries.", ""]
+             "Source: API-Football injuries and line-ups, goals plus-minus ratings (goal difference a 90 minutes "
+             "added), the football feed's Betfair books (`football/team_news.py`). `?` = doubtful (counted half). "
+             "Win points are the model's: the market's goal rates with the side's losses added back. The market "
+             "already prices most announced injuries, so this sizes the absences; it is not a value call.", ""]
     if "matches" not in res:
         return "\n".join(lines + [res.get("status", "no data found")]) + "\n"
-    lines += ["| Kick-off (UTC) | Match | Home out | Home GD/90 lost | Away out | Away GD/90 lost | Betfair H/D/A | "
-              "Home win pp lost | Away win pp lost |", "|---|---|---|---|---|---|---|---|---|"]
+    lines += ["| Kick-off (UTC) | Match | Home out -> in | Away out -> in | GD/90 lost H / A | Betfair H/D/A | "
+              "Win pts lost H / A |", "|---|---|---|---|---|---|---|"]
     for m in res["matches"]:
         h, a = m["home"], m["away"]
-        hn = ", ".join(x["player"] for x in h.get("absentees", [])[:3]) or "-"
-        an = ", ".join(x["player"] for x in a.get("absentees", [])[:3]) or "-"
+        lh = h["lost_gd90"] if h.get("matches_read", 0) >= 3 else "no data found"
+        la = a["lost_gd90"] if a.get("matches_read", 0) >= 3 else "no data found"
         bf = m["betfair"]
-        bfs = f"{bf['p_h']:.2f}/{bf['p_d']:.2f}/{bf['p_a']:.2f}" if isinstance(bf, dict) else "no data found"
+        bfs = f"{bf['p_h']:.2f} / {bf['p_d']:.2f} / {bf['p_a']:.2f}" if isinstance(bf, dict) else "no data found"
         imp = m.get("impact") or {}
-        lines.append(f"| {m['kickoff_utc'][11:16]} | {m['home']} v {m['away']} ({m['league']}) | {hn} | "
-                     f"{h['lost_gd90'] if h.get('matches_read', 0) >= 3 else 'no data found'} | {an} | "
-                     f"{a['lost_gd90'] if a.get('matches_read', 0) >= 3 else 'no data found'} | {bfs} | "
-                     f"{imp.get('home_win_pp_lost_to_absences', '-')} | {imp.get('away_win_pp_lost_to_absences', '-')} |")
+        lines.append(f"| {m['kickoff_utc'][11:16]} | {m['home_team']} v {m['away_team']} ({m['league']}) | "
+                     f"{_who(h)} | {_who(a)} | {lh} / {la} | {bfs} | "
+                     f"{imp.get('home_win_pp_lost_to_absences', '-')} / {imp.get('away_win_pp_lost_to_absences', '-')} |")
     return "\n".join(lines) + "\n"
 
 
