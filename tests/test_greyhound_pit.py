@@ -419,3 +419,46 @@ def test_irish_style_groups_read_the_vocabulary_codes():
     assert groups("rallied") == {"ranon"} and groups("outpaced") == {"faded"} and groups("stumbled") == {"trouble"}
     assert groups("level_start") == set() and "level_start" in NEUTRAL
     assert coverage(pd.DataFrame({"events": ["level_start|clear_run", "moved_off"]})) == round(2 / 3, 4)
+
+
+def test_the_nightly_build_lets_each_table_go_once_no_later_table_reads_it(tmp_path, monkeypatch):
+    """26 Nov 2026: every table stayed in memory to the end and the nightly build outgrew its runner. A table is
+    let go as soon as no later table reads it (``DEPENDS``: trouble reads ability), and each is still written."""
+    import types
+    from greyhound.pit import core as pcore
+    from sources.common import Store
+    seen = {}
+
+    def fake(name):
+        def build(runs, figs, ctx):
+            seen[name] = sorted(k for k in ctx if k in pit.TABLES)
+            return runs[pit.KEY].assign(**{f"{name}_x": 1.0}), {}
+        return types.SimpleNamespace(build=build, SOURCE="test", PREFIX=f"{name}_")
+    monkeypatch.setattr(pit, "module", fake)
+    monkeypatch.setattr(pit, "code_hash", lambda name: "h")
+    monkeypatch.setattr(pit, "engine_hash", lambda: "e")
+    monkeypatch.setattr(pit, "coverage", lambda tab, runs: {})
+    monkeypatch.setattr(pcore, "per_run_figures", lambda runs: None)
+    runs = pd.DataFrame({"race_id": [1, 1], "dog_id": [10, 11], "race_date": ["2026-11-01"] * 2})
+    store = Store(root=tmp_path)
+    metas = pit.build_tables(["ability", "trouble", "connections"], runs, store, {})
+    assert seen == {"ability": [], "trouble": ["ability"], "connections": []}
+    assert set(metas) == {"ability", "trouble", "connections"}
+    for n in metas:
+        assert store.get_parquet(f"{pit.STORE_PREFIX}/{n}.parquet") is not None
+
+
+def test_the_nightly_groups_keep_each_table_with_what_it_reads_and_cover_every_table():
+    names = [t for t in pit.TABLES if t not in pit.ON_DEMAND]
+    secs = {"ability": 563, "form": 356, "xtime": 283, "figs": 257}
+    groups = pit.build_groups(names, 4, secs)
+    assert len(groups) == 4
+    assert sorted(t for g in groups for t in g) == sorted(names)              # every table once
+    where = {t: i for i, g in enumerate(groups) for t in g}
+    for t in names:
+        for d in pit.DEPENDS.get(t, ()):
+            if d in where:
+                assert where[t] == where[d]                                # trouble with ability, dyad with xtime
+    for g in groups:
+        assert g == [t for t in pit.TABLES if t in g]                      # each in build order
+    assert pit.build_groups(["ability", "trouble"], 4) == [["ability", "trouble"]]

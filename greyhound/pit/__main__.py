@@ -20,6 +20,8 @@ def main(argv=None) -> int:
     ap.add_argument("--root", default=None, help="a local store (default S3)")
     ap.add_argument("--out", default="out/pit")
     ap.add_argument("--registry", action="store_true", help="write reports/greyhound_metrics_registry.md")
+    ap.add_argument("--groups", type=int, default=None,
+                    help="print --build's tables as at most N groups (JSON), one a job (greyhound-pit.yml); builds none")
     a = ap.parse_args(argv)
     if a.registry:
         Path("reports/greyhound_metrics_registry.md").write_text(pit.registry_markdown())
@@ -31,6 +33,10 @@ def main(argv=None) -> int:
     store = Store(root=a.root)
     names = ([t for t in pit.TABLES if t not in pit.ON_DEMAND] if a.build == "all"
              else [n.strip() for n in a.build.split(",")])
+    if a.groups:
+        groups = pit.build_groups(names, a.groups, pit.stored_seconds(store, names))
+        print(json.dumps([",".join(g) for g in groups]))
+        return 0
     last = date.fromisoformat(a.last) if a.last else date.today() - timedelta(days=1)
     trial_rows: list = []
     runs = runs_through(store, last, first_year=a.first_year, trials_out=trial_rows)
