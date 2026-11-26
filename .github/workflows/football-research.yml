@@ -46,6 +46,7 @@ on:
           - warehouse
           - warehouse_models
           - team_news
+          - today
       days:
         description: 'days of the live record to read'
         required: false
@@ -111,6 +112,11 @@ jobs:
       - name: Line-up news and Betfair's late move (the closing-line model's team-news input)
         if: inputs.job == 'lineup_late_move'
         run: python -m research.open_close.football_lineup_late_move --out out/lineup_late_move.json
+      - name: The football traders' day so far (back-to-lay and value bets, paper and live; read-only)
+        if: inputs.job == 'today'
+        run: |
+          mkdir -p out
+          python -m football.today --day "$(TZ=Europe/London date +%F)" --out out/football_today.json --md out/football_today.md
       - name: Team news for a day's matches (injuries, replacements, win probabilities; nothing is traded)
         if: inputs.job == 'team_news'
         run: |
