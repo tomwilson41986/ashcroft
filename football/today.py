@@ -32,9 +32,16 @@ def b2l_day(store, day: str) -> dict:
     recs = [json.loads(x) for x in raw.decode().splitlines() if x.strip()]
     d = pd.DataFrame(recs)
     out["records"] = int(len(d))
-    dec = d[d["kind"] == "decide"] if "kind" in d else d.iloc[:0]
-    out["forecasts"] = int(len(dec))
-    out["cells_cleared"] = int(dec["cell"].notna().sum()) if "cell" in dec else 0
+    dec = d[d["kind"] == "decision"] if "kind" in d else d.iloc[:0]
+    fc = dec[dec["forecast"].notna()] if "forecast" in dec else dec.iloc[:0]
+    out["checkpoints_read"] = int(dec[["market_id", "cp_min"]].drop_duplicates().shape[0]) if len(dec) else 0
+    out["forecasts"] = int(len(fc))
+    out["cells_cleared"] = int(fc["cell"].notna().sum()) if "cell" in fc else 0
+    out["no_forecast_why"] = dec.loc[dec.get("outcome", pd.Series(index=dec.index, dtype=object)).notna(),
+                                     "outcome"].value_counts().to_dict() if "outcome" in dec else {}
+    if len(fc):
+        out["forecast_quantiles"] = {q: round(float(fc["forecast"].quantile(q)), 4) for q in (0.5, 0.9, 0.99)}
+        out["by_checkpoint"] = fc.groupby("cp_min").size().to_dict()
     tr = d[d["kind"].isin(["back", "lay"])] if "kind" in d else d.iloc[:0]
     rows = []
     for r in tr.to_dict("records"):
@@ -76,7 +83,9 @@ def markdown(res: dict) -> str:
         lines.append(b["trades"])
     else:
         lines.append(f"Model fitted {b['model'].get('fitted_utc') if isinstance(b['model'], dict) else b['model']}; "
-                     f"forecasts {b['forecasts']}, cells cleared {b['cells_cleared']}; live backs matched "
+                     f"checkpoints read {b['checkpoints_read']}, runner forecasts {b['forecasts']} "
+                     f"(quantiles {b.get('forecast_quantiles')}), cells cleared {b['cells_cleared']}, no forecast: "
+                     f"{b['no_forecast_why']}; live backs matched "
                      f"{b['live_backs_matched']} (GBP {b['live_staked_gbp']:.2f}), paper {b['paper_backs_matched']}.")
         if b["orders"]:
             lines += ["", "| At (UTC) | Mode | Kind | Market | Selection | Cell | Price | Status | Matched | Locked |",
