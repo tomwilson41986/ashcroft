@@ -49,3 +49,25 @@ def test_pairing_by_kickoff_and_names():
                         "minutes_before_ko": 28.0}])
     p = st.pair(sm, af)
     assert len(p) == 1 and p.iloc[0]["api_football_min"] == 28.0
+
+
+def test_a_checkpoint_after_each_polling_cycle_keeps_the_result(monkeypatch):
+    t0 = datetime(2026, 11, 26, 17, 0, tzinfo=timezone.utc)
+    ko = int((t0 + timedelta(minutes=45)).timestamp())
+    clock = {"t": t0}
+    monkeypatch.setattr(st, "discover", lambda s, day: {7: {"id": 7, "kickoff": ko, "league": "L", "home": "A",
+                                                             "away": "B", "home_id": 1, "away_id": 2}})
+
+    class R:
+        def json(self):
+            return {"data": [{"id": 7, "lineups": [{"type_id": 11, "team_id": 1}] * 11
+                              + [{"type_id": 11, "team_id": 2}] * 11}]}
+    import sources.common
+    monkeypatch.setattr(sources.common, "get", lambda s, url, params=None: R())
+    saved = []
+
+    def sleep(s):
+        clock["t"] += timedelta(seconds=s)
+    st.watch(None, t0 + timedelta(minutes=3), now=lambda: clock["t"], sleep=sleep,
+             checkpoint=lambda rows, meta: saved.append(st.summarise(rows, meta, "2026-11-26", False)))
+    assert saved and saved[0]["with_both_elevens"] == 1 and saved[0]["sportmonks_minutes_before_ko"][0.5] == 45.0

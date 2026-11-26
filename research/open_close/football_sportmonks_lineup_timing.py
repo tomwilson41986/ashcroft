@@ -77,7 +77,10 @@ def starters(f: dict) -> tuple[dict, dict]:
     return n, types
 
 
-def watch(s, until: datetime, now=lambda: datetime.now(timezone.utc), sleep=time.sleep) -> tuple[dict, dict]:
+def watch(s, until: datetime, now=lambda: datetime.now(timezone.utc), sleep=time.sleep,
+          checkpoint=None) -> tuple[dict, dict]:
+    """Poll to ``until``; ``checkpoint(rows, meta)`` after each cycle that polled (the result kept if the job is
+    stopped early: 26 Nov's run was ended by its time limit before it wrote anything)."""
     from sources.common import get
     from sources.sportmonks import BASE
     fx, seen, polls, types_seen = {}, {}, {}, {}
@@ -103,14 +106,22 @@ def watch(s, until: datetime, now=lambda: datetime.now(timezone.utc), sleep=time
                 h, a = fx[i]["home_id"], fx[i]["away_id"]
                 if n.get(h, 0) >= 11 and n.get(a, 0) >= 11:
                     seen[i] = t
+                    log.info("sportmonks elevens: %s v %s (%s), %.1f min before kick-off", fx[i]["home"],
+                             fx[i]["away"], fx[i]["league"], (fx[i]["kickoff"] - ts) / 60)
+        if checkpoint is not None and due:
+            checkpoint(_rows(fx, seen, polls), {"lineup_type_counts": types_seen})
         sleep(EVERY_S)
+    return _rows(fx, seen, polls), {"lineup_type_counts": types_seen}
+
+
+def _rows(fx: dict, seen: dict, polls: dict) -> dict:
     rows = {}
     for i, f in fx.items():
         ko = datetime.fromtimestamp(f["kickoff"], timezone.utc) if f["kickoff"] else None
         rows[i] = {**f, "kickoff_utc": str(ko), "polls": polls.get(i, 0),
                    "first_seen_utc": str(seen[i]) if i in seen else None,
                    "minutes_before_ko": round((ko - seen[i]).total_seconds() / 60, 1) if i in seen and ko else None}
-    return rows, {"lineup_type_counts": types_seen}
+    return rows
 
 
 def api_football_times(store, day: str) -> pd.DataFrame:
@@ -139,6 +150,34 @@ def pair(sm: pd.DataFrame, af: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
+def summarise(rows: dict, meta: dict, day: str, final: bool) -> dict:
+    sm = pd.DataFrame(list(rows.values()))
+    watched = sm[sm["polls"] > 0] if len(sm) else sm
+    got = watched.dropna(subset=["minutes_before_ko"]) if len(watched) else watched
+    res = {"day": day, "final": final, "fixtures_today": int(len(sm)), "watched": int(len(watched)),
+           "with_both_elevens": int(len(got)), **meta,
+           "sportmonks_minutes_before_ko": {q: round(float(got["minutes_before_ko"].quantile(q)), 1)
+                                            for q in (0.1, 0.5, 0.9)} if len(got) else "no data found",
+           "by_league": got.groupby("league")["minutes_before_ko"].agg(["size", "median"]).round(1)
+           .reset_index().to_dict("records") if len(got) else []}
+    if final:
+        try:
+            from sources.common import Store
+            af = api_football_times(Store(), day)
+            p = pair(got, af)
+            res["paired_with_api_football"] = int(len(p))
+            if len(p):
+                p["sportmonks_earlier_by_min"] = p["sportmonks_min"] - p["api_football_min"]
+                res["paired_median"] = {"sportmonks_min": float(p["sportmonks_min"].median()),
+                                        "api_football_min": float(p["api_football_min"].median()),
+                                        "sportmonks_earlier_by_min": float(p["sportmonks_earlier_by_min"].median())}
+                res["paired"] = p.to_dict("records")
+        except Exception as exc:                                  # the pairing is a bonus; the timing stands alone
+            res["paired_with_api_football"] = f"failed: {str(exc)[:200]}"
+    res["matches"] = watched.sort_values("kickoff").to_dict("records") if len(watched) else []
+    return res
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--until", required=True, help="UTC HH:MM to stop polling")
@@ -155,31 +194,18 @@ def main(argv=None) -> int:
     now = datetime.now(timezone.utc)
     h, m = (int(x) for x in a.until.split(":"))
     until = now.replace(hour=h, minute=m, second=0, microsecond=0)
-    rows, meta = watch(s, until)
-    sm = pd.DataFrame(list(rows.values()))
-    watched = sm[sm["polls"] > 0] if len(sm) else sm
-    got = watched.dropna(subset=["minutes_before_ko"]) if len(watched) else watched
-    res = {"day": now.date().isoformat(), "fixtures_today": int(len(sm)), "watched": int(len(watched)),
-           "with_both_elevens": int(len(got)), **meta,
-           "sportmonks_minutes_before_ko": {q: round(float(got["minutes_before_ko"].quantile(q)), 1)
-                                            for q in (0.1, 0.5, 0.9)} if len(got) else "no data found",
-           "by_league": got.groupby("league")["minutes_before_ko"].agg(["size", "median"]).round(1)
-           .reset_index().to_dict("records") if len(got) else []}
-    try:
-        af = api_football_times(Store(), res["day"])
-        p = pair(got, af)
-        res["paired_with_api_football"] = int(len(p))
-        if len(p):
-            p["sportmonks_earlier_by_min"] = p["sportmonks_min"] - p["api_football_min"]
-            res["paired_median"] = {"sportmonks_min": float(p["sportmonks_min"].median()),
-                                    "api_football_min": float(p["api_football_min"].median()),
-                                    "sportmonks_earlier_by_min": float(p["sportmonks_earlier_by_min"].median())}
-            res["paired"] = p.to_dict("records")
-    except Exception as exc:                                      # the pairing is a bonus; the timing stands alone
-        res["paired_with_api_football"] = f"failed: {str(exc)[:200]}"
-    res["matches"] = watched.sort_values("kickoff").to_dict("records") if len(watched) else []
-    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-    Path(a.out).write_text(json.dumps(res, indent=1, default=str) + "\n")
+    if until <= now:                                              # past midnight UTC
+        until += timedelta(days=1)
+    out = Path(a.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    def save(rows, meta, final=False):
+        res = summarise(rows, meta, now.date().isoformat(), final)
+        out.write_text(json.dumps(res, indent=1, default=str) + "\n")
+        return res
+
+    rows, meta = watch(s, until, checkpoint=save)
+    res = save(rows, meta, final=True)
     print(json.dumps({k: v for k, v in res.items() if k not in ("matches", "paired")}, indent=1, default=str))
     return 0
 
