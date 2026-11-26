@@ -536,3 +536,13 @@ def test_the_back_to_lay_strategy_bets_what_the_owner_set():
     assert "B2L(ex, store, mode, kill_switch(store))" in live                   # the trader's exchange and mode, its STOP
     text = (WORKFLOWS / "football-trade.yml").read_text()
     assert "b2l" not in text                                                    # no command of its own
+
+
+def test_the_football_trader_ends_at_a_fixed_time_before_the_warehouse_fetch():
+    """The trader ends at 04:50 UTC whatever time it starts, so the football runner is free for the warehouse fetch
+    (05:12-05:36 UTC) every night; a fixed 23.5 hours from a late start ran over it (26 Nov 2026)."""
+    wf = (ROOT / ".github" / "workflows" / "football-trade.yml").read_text()
+    assert "--hours 23.5" not in wf
+    assert '04:50" +%s)' in wf and '--hours "$HRS"' in wf
+    fetch = (ROOT / ".github" / "workflows" / "football-warehouse.yml").read_text()
+    assert "cron: '12 5 * * *'" in fetch
