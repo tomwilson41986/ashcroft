@@ -41,7 +41,11 @@ DAY_CAP = 50.0
 LAY_WITHIN_MIN = 2.0
 PREV_CHECKPOINT = {360: 720, 15: 30}            # the grid point the implied changes are measured from
 REF_PREFIX = "b2l-"
-RELOAD_SECONDS = 3600.0                         # the model and memory read again hourly
+RELOAD_SECONDS = 3600.0
+#: the owner, 26 Nov 2026 ("Apply the thin books fix"): no back in a match-odds market with less than this matched
+#: at the moment of the back (the first live day's loss came from a youth match whose price went 48 to 128 in 13
+#: minutes; the liquid Europa League trades moved a tick or two)
+MIN_MARKET_MATCHED = 5000.0                         # the model and memory read again hourly
 TRADES_PREFIX = "football/b2l/trades"
 
 
@@ -290,6 +294,14 @@ class B2L:
             self.log.append({**rec, "outcome": f"day cap GBP {DAY_CAP:.0f} reached"})
             return
         row = (self.latest.get(mid) or {}).get(sid) or {}
+        try:
+            mm = float(row.get("market_total_matched") or 0.0)
+        except (TypeError, ValueError):
+            mm = 0.0
+        if not mm >= MIN_MARKET_MATCHED:
+            self.log.append({**rec, "outcome": f"thin book: GBP {mm:,.0f} matched, under {MIN_MARKET_MATCHED:,.0f}",
+                             "market_total_matched": mm})
+            return
         lv = levels(row, "back")
         if not lv:
             self.log.append({**rec, "outcome": "no price to back"})
