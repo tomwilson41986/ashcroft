@@ -112,3 +112,27 @@ def test_paper_sends_nothing_to_an_exchange():
     assert all(r.get("mode") == "paper" for r in s.log)
     m, avg, status = bt.lay_fok(object(), "1.5", 1, 2.52, 1.98, "b2lx", row(KO, 1, 2.5))
     assert status == "SUCCESS" and avg == pytest.approx(2.52)
+
+
+def test_the_model_is_read_again_hourly_so_a_refit_after_the_start_is_picked_up(monkeypatch):
+    """The trader starts at 05:40 UTC; the nightly refit can land after it. A model loaded at the start is read again
+    within the hour, not only at the next UK day (26 Nov 2026)."""
+    from football import b2l
+    models = iter([{"v": 1}, {"v": 2}])
+    calls = []
+    monkeypatch.setattr(b2l, "load", lambda store: (calls.append(1), next(models))[1])
+    t = [1000.0]
+    monkeypatch.setattr(bt.time, "monotonic", lambda: t[0])
+
+    class Store:
+        def get(self, key):
+            return None
+    x = bt.B2L(None, Store(), "paper", lambda: False)
+    x.load("2026-11-26")
+    assert x.model == {"v": 1}
+    t[0] += 60
+    x.load("2026-11-26")                                   # within the hour: not read again
+    assert len(calls) == 1
+    t[0] += bt.RELOAD_SECONDS
+    x.load("2026-11-26")
+    assert x.model == {"v": 2} and len(calls) == 2

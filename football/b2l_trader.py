@@ -28,6 +28,7 @@ import io
 import json
 import logging
 import math
+import time
 from datetime import datetime, timezone
 
 import numpy as np
@@ -40,6 +41,7 @@ DAY_CAP = 50.0
 LAY_WITHIN_MIN = 2.0
 PREV_CHECKPOINT = {360: 720, 15: 30}            # the grid point the implied changes are measured from
 REF_PREFIX = "b2l-"
+RELOAD_SECONDS = 3600.0                         # the model and memory read again hourly
 TRADES_PREFIX = "football/b2l/trades"
 
 
@@ -144,13 +146,16 @@ class B2L:
         self.spent: dict[str, float] = {}               # UK day -> GBP backed
         self.log: list[dict] = []
         self.loaded_day = None
+        self.loaded_at = 0.0
         self.now = now or (lambda: datetime.now(timezone.utc))
 
     # ---- inputs --------------------------------------------------------------------------------------------------
     def load(self, day: str) -> None:
-        """The model and the memory, once a day (the nightly refit writes them)."""
-        if self.loaded_day == day and self.model is not None:
+        """The model and the memory, read again every hour (the nightly refit writes them after the trader's start)."""
+        mono = time.monotonic()
+        if self.loaded_day == day and self.model is not None and mono - self.loaded_at < RELOAD_SECONDS:
             return
+        self.loaded_at = mono
         from football import b2l
         self.model = b2l.load(self.store) or self.model
         raw = self.store.get(b2l.MEMORY_KEY) if self.store is not None else None

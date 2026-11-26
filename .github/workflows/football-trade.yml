@@ -29,7 +29,7 @@ name: Football (the trader, every match on Betfair, the book records, the line-u
 
 on:
   schedule:
-    - cron: '40 5 * * *'      # 23.5 hours from 05:40 UTC: every kick-off of the day, worldwide
+    - cron: '40 5 * * *'      # from 05:40 UTC to 04:50 UTC the next day: every kick-off of the day, worldwide
   workflow_dispatch:
 
 permissions:
@@ -155,7 +155,13 @@ jobs:
           FBL=$!
           # the trader, in the foreground: its decisions (real only with FOOTBALL_LIVE=yes) and every match on Betfair
           # recorded and paper-traded beside them
-          BETFAIR_APP_KEY="$FBKEY" timeout 1420m python -m football.live --trade --all-games --hours 23.5 $LIVEFLAG
+          # to 04:50 UTC whenever it starts (not 23.5 hours from the start: a late start pushed the end past the
+          # warehouse fetch's 05:12-05:36 window on this runner and the next day's start later again, 26 Nov 2026)
+          END=$(date -u -d "$(date -u -d '+1 day' +%F) 04:50" +%s)
+          [ $(( END - $(date -u +%s) )) -gt 86400 ] && END=$(( END - 86400 ))
+          HRS=$(awk -v s=$(( END - $(date -u +%s) )) 'BEGIN{printf "%.3f", s/3600}')
+          echo "football trader: $HRS hours, to $(date -u -d @$END +%FT%H:%MZ)"
+          BETFAIR_APP_KEY="$FBKEY" timeout 1420m python -m football.live --trade --all-games --hours "$HRS" $LIVEFLAG
           FC=$?; echo "football trader exited $FC"
           for P in "${FBREC[@]}"; do wait "$P"; done
           echo "football book records exited"; tail -n 2 "$RUNNER_TEMP"/football_*.log
