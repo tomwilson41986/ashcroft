@@ -33,7 +33,7 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-LEAD_MIN = 100.0
+LEAD_MIN = 180.0          # 27 Nov: the elevens were there at the first poll, 100 minutes out
 EVERY_S = 60
 STARTER_TYPE = 11            # Sportmonks lineup type: 11 starting eleven, 12 bench (checked against each reply)
 
@@ -77,14 +77,31 @@ def starters(f: dict) -> tuple[dict, dict]:
     return n, types
 
 
+def eleven(f: dict) -> frozenset:
+    """The starting players named in one reply (player ids of lineup type 11)."""
+    return frozenset(x.get("player_id") for x in f.get("lineups") or [] if x.get("type_id") == STARTER_TYPE)
+
+
+def meta_flags(f: dict) -> dict:
+    """Sportmonks' metadata as {type code or id: value} (it may say whether the line-ups are confirmed)."""
+    out = {}
+    for m in f.get("metadata") or []:
+        key = ((m.get("type") or {}).get("code") or (m.get("type") or {}).get("developer_name")
+               or m.get("type_id"))
+        out[str(key)] = m.get("values", m.get("value"))
+    return out
+
+
 def watch(s, until: datetime, now=lambda: datetime.now(timezone.utc), sleep=time.sleep,
           checkpoint=None) -> tuple[dict, dict]:
-    """Poll to ``until``; ``checkpoint(rows, meta)`` after each cycle that polled (the result kept if the job is
-    stopped early: 26 Nov's run was ended by its time limit before it wrote anything)."""
+    """Poll every match from ``LEAD_MIN`` before its kick-off to the kick-off, every minute (27 Nov: Sportmonks had
+    22 starters 100 minutes out, before the official 75-minute release, so the early elevens look predicted): when
+    both elevens first appear, every change to them after, and Sportmonks' metadata. ``checkpoint(rows, meta)``
+    after each cycle that polled."""
     from sources.common import get
     from sources.sportmonks import BASE
-    fx, seen, polls, types_seen = {}, {}, {}, {}
-    last_disc = None
+    fx, st, types_seen, meta_seen = {}, {}, {}, {}
+    last_disc, include = None, "lineups;metadata.type"
     while now() < until:
         t = now()
         if last_disc is None or (t - last_disc) >= timedelta(hours=1):
@@ -92,35 +109,64 @@ def watch(s, until: datetime, now=lambda: datetime.now(timezone.utc), sleep=time
             last_disc = t
             log.info("sportmonks: %d fixtures today", len(fx))
         ts = t.timestamp()
-        due = [i for i, f in fx.items() if i not in seen and 0 < f["kickoff"] - ts <= LEAD_MIN * 60]
+        due = [i for i, f in fx.items() if 0 < f["kickoff"] - ts <= LEAD_MIN * 60]
         for k in range(0, len(due), 50):
             ids = due[k:k + 50]
-            r = get(s, f"{BASE}/fixtures/multi/{','.join(str(i) for i in ids)}", params={"include": "lineups"})
+            url = f"{BASE}/fixtures/multi/{','.join(str(i) for i in ids)}"
+            r = get(s, url, params={"include": include})
+            if r is None and include != "lineups":                  # the metadata include refused: line-ups only
+                include = "lineups"
+                meta_seen["include"] = "metadata refused; lineups only"
+                r = get(s, url, params={"include": include})
             body = r.json() if r is not None else {}
             for f in body.get("data") or []:
                 i = f["id"]
-                polls[i] = polls.get(i, 0) + 1
+                x = st.setdefault(i, {"polls": 0, "first": None, "first_xi": None, "xi": None, "changes": [],
+                                      "meta_first": None, "meta_last": None})
+                x["polls"] += 1
                 n, types = starters(f)
                 for ty, c in types.items():
                     types_seen[ty] = types_seen.get(ty, 0) + c
+                mf = meta_flags(f)
+                if mf:
+                    x["meta_last"] = mf
+                    x["meta_first"] = x["meta_first"] or mf
+                    for kk in mf:
+                        meta_seen.setdefault("codes", set()).add(kk)
                 h, a = fx[i]["home_id"], fx[i]["away_id"]
                 if n.get(h, 0) >= 11 and n.get(a, 0) >= 11:
-                    seen[i] = t
-                    log.info("sportmonks elevens: %s v %s (%s), %.1f min before kick-off", fx[i]["home"],
-                             fx[i]["away"], fx[i]["league"], (fx[i]["kickoff"] - ts) / 60)
+                    xi = eleven(f)
+                    mins = (fx[i]["kickoff"] - ts) / 60
+                    if x["first"] is None:
+                        x["first"], x["first_xi"] = mins, xi
+                        log.info("sportmonks elevens: %s v %s (%s), %.1f min before kick-off", fx[i]["home"],
+                                 fx[i]["away"], fx[i]["league"], mins)
+                    elif xi != x["xi"]:
+                        x["changes"].append((round(mins, 1), len(xi - x["xi"])))
+                        log.info("sportmonks elevens changed: %s v %s, %.1f min before, %d new", fx[i]["home"],
+                                 fx[i]["away"], mins, len(xi - x["xi"]))
+                    x["xi"] = xi
+        meta = {"lineup_type_counts": types_seen,
+                "metadata": {k: (sorted(v) if isinstance(v, set) else v) for k, v in meta_seen.items()}}
         if checkpoint is not None and due:
-            checkpoint(_rows(fx, seen, polls), {"lineup_type_counts": types_seen})
+            checkpoint(_rows(fx, st), meta)
         sleep(EVERY_S)
-    return _rows(fx, seen, polls), {"lineup_type_counts": types_seen}
+    return _rows(fx, st), {"lineup_type_counts": types_seen,
+                           "metadata": {k: (sorted(v) if isinstance(v, set) else v) for k, v in meta_seen.items()}}
 
 
-def _rows(fx: dict, seen: dict, polls: dict) -> dict:
+def _rows(fx: dict, st: dict) -> dict:
     rows = {}
     for i, f in fx.items():
         ko = datetime.fromtimestamp(f["kickoff"], timezone.utc) if f["kickoff"] else None
-        rows[i] = {**f, "kickoff_utc": str(ko), "polls": polls.get(i, 0),
-                   "first_seen_utc": str(seen[i]) if i in seen else None,
-                   "minutes_before_ko": round((ko - seen[i]).total_seconds() / 60, 1) if i in seen and ko else None}
+        x = st.get(i) or {}
+        first, last = x.get("first_xi"), x.get("xi")
+        rows[i] = {**f, "kickoff_utc": str(ko), "polls": x.get("polls", 0),
+                   "minutes_before_ko": round(x["first"], 1) if x.get("first") is not None else None,
+                   "last_change_min": x["changes"][-1][0] if x.get("changes") else None,
+                   "changes": x.get("changes", []),
+                   "first_xi_kept": round(len(first & last) / len(last), 3) if first and last else None,
+                   "meta_first": x.get("meta_first"), "meta_last": x.get("meta_last")}
     return rows
 
 
