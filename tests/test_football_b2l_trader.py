@@ -20,9 +20,9 @@ def meta(mid="1.5", event="Arsenal v Spurs"):
                         {"selectionId": 3, "runnerName": "The Draw", "sortPriority": 3}]}
 
 
-def row(t, sid, ltp, back=None, lay=None, mid="1.5"):
+def row(t, sid, ltp, back=None, lay=None, mid="1.5", matched=50000.0):
     r = {"polled_utc": t.isoformat(), "market_id": mid, "status": "OPEN", "inplay": 0, "selection_id": sid,
-         "last_traded": ltp}
+         "last_traded": ltp, "market_total_matched": matched}
     for side, (p, s) in (("back", back or (ltp, 100.0)), ("lay", lay or (round(ltp + 0.02, 2), 100.0))):
         r[f"{side}1"], r[f"{side}1_size"] = p, s
     return r
@@ -177,3 +177,16 @@ def test_a_restarted_run_keeps_the_days_backs_lays_the_open_one_and_counts_the_s
     assert st.put_body.decode().count("\n") == len(recs)             # the log kept, not overwritten
     x.load(day)                                                      # the same day again: not restored twice
     assert x.spent[day] == 4.0 and len(x.log) == len(recs)
+
+
+def test_no_back_in_a_thin_book():
+    """The owner, 26 Nov 2026: no back where the market has under GBP 5,000 matched."""
+    x = bt.B2L(None, None, "paper", lambda: False)
+    t = KO - timedelta(minutes=15)
+    for sid in (1, 2, 3):
+        x.observe([row(t, sid, 3.0, mid="1.5", matched=4999.0)])
+    x.back("1.5", 1, 15, "15 over 0.05", "2026-11-26")
+    assert ("1.5", 1) not in x.backed and x.log[-1]["outcome"].startswith("thin book")
+    x.observe([row(t, 1, 3.0, mid="1.5", matched=5000.0)])
+    x.back("1.5", 1, 15, "15 over 0.05", "2026-11-26")
+    assert ("1.5", 1) in x.backed

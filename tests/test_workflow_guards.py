@@ -549,3 +549,9 @@ def test_the_football_trader_ends_at_a_fixed_time_before_the_warehouse_fetch():
     assert '04:50" +%s)' in wf and '--hours "$HRS"' in wf
     fetch = (ROOT / ".github" / "workflows" / "football-warehouse.yml").read_text()
     assert "cron: '12 5 * * *'" in fetch
+
+
+def test_the_back_to_lay_trader_skips_thin_books():
+    """The owner, 26 Nov 2026: "Apply the thin books fix" (GBP 5,000 matched in the market at the back)."""
+    src = (ROOT / "football" / "b2l_trader.py").read_text()
+    assert "MIN_MARKET_MATCHED = 5000.0" in src and "if not mm >= MIN_MARKET_MATCHED:" in src
