@@ -30,8 +30,13 @@ def test_watch_keeps_the_first_poll_with_both_elevens(monkeypatch):
             return self.body
 
     def get(s, url, params=None):
-        full = clock["t"] >= t0 + timedelta(minutes=3)
-        lu = ([{"type_id": 11, "team_id": 1}] * 11 + [{"type_id": 11, "team_id": 2}] * 11) if full else []
+        m = (clock["t"] - t0).total_seconds() / 60
+        if m < 3:
+            lu = []
+        else:                                                    # at T+5 one home starter is swapped
+            home = list(range(1, 12)) if m < 5 else list(range(1, 11)) + [99]
+            lu = ([{"type_id": 11, "team_id": 1, "player_id": p} for p in home]
+                  + [{"type_id": 11, "team_id": 2, "player_id": 100 + p} for p in range(11)])
         return R({"data": [{"id": 7, "lineups": lu}]})
     import sources.common
     monkeypatch.setattr(sources.common, "get", get)
@@ -39,7 +44,10 @@ def test_watch_keeps_the_first_poll_with_both_elevens(monkeypatch):
     def sleep(s):
         clock["t"] += timedelta(seconds=s)
     rows, meta = st.watch(None, t0 + timedelta(minutes=6), now=lambda: clock["t"], sleep=sleep)
-    assert rows[7]["minutes_before_ko"] == 42.0 and rows[7]["polls"] == 4      # seen at T+3; not polled again
+    r = rows[7]
+    assert r["minutes_before_ko"] == 42.0 and r["polls"] == 6        # first seen at T+3, polled on to the end
+    assert r["changes"] == [(40.0, 1)] and r["last_change_min"] == 40.0
+    assert r["first_xi_kept"] == round(21 / 22, 3)
 
 
 def test_pairing_by_kickoff_and_names():
