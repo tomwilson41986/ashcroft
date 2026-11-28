@@ -2043,6 +2043,16 @@ first on the execution fixes of 24 Nov (PR #501: no unknown order state, no kill
   to +0.0020), no longer resolved (ledger `model-error-stn-1126`). The shadow runs to 5 Dec.
 - **The record (the horse trader):** 48 days, +GBP7,261.24, 37 up.
 
+**The fifty-eighth full day** (27 Nov, a Friday; ledger `live-day-1127`), the sixth priced by gate_stn.
+- **+GBP31.38 after commission** on 341 fills on 101 horses, GBP2,557.68 matched, 34 races, CLV +1.47% (first backs
+  +4.9%, top-ups -0.1%); 3 backs refused EXPIRED. The cap of 3 top-ups held (71 horses at 4 fills, none over).
+- **The account.** Session start GBP7,225.44 (GBP4.00 under the night before) -> GBP7,159.89 (-GBP65.55): the horse
+  trader +GBP31.38, the greyhound lay at the SP -GBP94.99 (142 lays), the football trader one GBP2 back; GBP1.94 and
+  the GBP4.00 not otherwise traced (ledger `account-day-1127`).
+- **gate_stn against its shadow** over 21-27 Nov (2,519 runners): the served price 0.0008 closer to the BSP (-0.0015
+  to +0.0034), not resolved (ledger `model-error-stn-1127`).
+- **The record (the horse trader):** 49 days, +GBP7,292.62, 38 up.
+
 **21 Nov: gate_stn served from 22 Nov** (ledger `serve-stn-1121`). The owner, 21 Nov: "Serve the Phase 6 result."
 From the 03:00 UTC predictions of 22 Nov the served blend is the stack blend with collateral, future_form and
 nbl_rating in all three members (bfsp-model-72/73/71, 1,263 features, trained through 16 Nov, the gate unchanged).
